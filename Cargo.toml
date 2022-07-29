@@ -3,5 +3,11 @@ name = "bevy_sprite3d"
 version = "0.1.0"
 edition = "2021"
 
+description = "Bevy Plugin to allow using 2d sprites in a 3d scene."
+license = "MIT"
+readme = "readme.md"
+repository = "https://github.com/FraserLee/bevy_sprite3d"
+keywords = ["gamedev", "bevy", "sprite", "3d"]
+
 [dependencies]
 bevy = "0.7.0"
