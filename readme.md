@@ -7,10 +7,8 @@ Useful for:
 - 2d games using bevy's lighting `(orthographic camera, 3d sprites)`
 - 2d games with easier parallax and scale `(perspective camera, 3d sprites)`
 - 2d games in a 3d world `(perspective camera, both 3d sprites and meshes)`
-
-You could also use this for billboard sprites in a 3d game (a la
-[Delver](https://cdn.cloudflare.steamstatic.com/steam/apps/249630/ss_0187dc55d24155ca3944b4ccc827baf7832715a0.1920x1080.jpg)),
-so long as you set the sprite rotation.
+- 3d games with billboard sprites (a la
+  [Delver](https://cdn.cloudflare.steamstatic.com/steam/apps/249630/ss_0187dc55d24155ca3944b4ccc827baf7832715a0.1920x1080.jpg))
 
 
 Both meshes and materials are internally cached, so you can use this for things
@@ -30,19 +28,15 @@ Some more examples. These don't use bevy, but demonstrate the effect style:
 
 # Usage
 
-One small complication to usage is that your image assets need to be loaded
-*prior* to spawning, as `bevy_sprite3d` uses some properties of the image (such
-as size and aspect ratio) in constructing the sprite.
+One small complication to `bevy_sprite3d` is that your image assets need to be
+loaded *prior* to spawning, as the crate uses some properties of the image
+(such as size and aspect ratio) in constructing the 3d mesh.
 
-It's my understanding that bevy doesn't have a great way to do this yet.
-To this end, I highly recommend using
-[`bevy_asset_loader`](https://github.com/NiklasEi/bevy_asset_loader), though
-the same functionality can be achieved manually.
-
-The following examples will use `bevy_asset_loader` for simplicity. Even still,
-most of the additional complexity is due to this loading-before-spawning
-requirement (and not `bevy_sprite3d`). If anyone knows a simpler way to write
-the examples, please update it!
+The following examples will use
+[`bevy_asset_loader`](https://github.com/NiklasEi/bevy_asset_loader) for
+simplicity. Even still, there's a fair amount of boilerplate due to this
+loading-before-spawning requirement. If anyone knows a simpler way to write the
+examples, please update it!
 
 
 ## Single Sprite
@@ -163,9 +157,5 @@ fn setup(
     }.bundle(&mut sprite_params));
 }
 ```
-
-
-
-
 
 
