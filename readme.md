@@ -1,17 +1,21 @@
-# Bevy Sprite3d
+# bevy_sprite3d
 
-Use sprites in a 3d scene.
+Use 2d sprites in a 3d scene. This was my go-to workflow back when I was using
+Unity. This crate replicates it in [bevy](https://bevyengine.org/).
 
-This was my go-to technique back when I was using Unity. This replicates it in bevy.
+Useful for:
+- 2d games using bevy's lighting `(orthographic camera, 3d sprites)`
+- 2d games with easier parallax and scale `(perspective camera, 3d sprites)`
+- 2d games in a 3d world `(perspective camera, both 3d sprites and meshes)`
 
-Useful for 
-- 2d games in a 3d world (perspective camera, mixed 3d sprites and meshes)
-- 2d games with easier parallax and scale handling (perspective camera, 3d sprites)
-- Purely 2d games that just want to use lighting (orthographic camera, 3d sprites)
+You could also use this for billboard sprites in a 3d game (a la
+[Delver](https://cdn.cloudflare.steamstatic.com/steam/apps/249630/ss_0187dc55d24155ca3944b4ccc827baf7832715a0.1920x1080.jpg)),
+so long as you set the sprite rotation.
 
-# Example
 
-Bevy example, using Bevy Sprite3d:
+# Examples
+
+Example using `bevy_sprite3d`:
 
 ![chaos](example.gif)
 
@@ -19,7 +23,8 @@ Some more examples. These don't use bevy, but demonstrate the effect style:
 
 ![the last night](https://cdn.cloudflare.steamstatic.com/steam/apps/612400/extras/TLN_Crowd_01_compressed.png)
 ![the last night](https://cdn.cloudflare.steamstatic.com/steam/apps/612400/extras/TLN_Shootout_01_compressed.png)
-![hollow knight](https://unity.com/sites/default/files/styles/16_9_m_scale_width/public/article/02-6-unity_parallax.1-min-compressor.gif)
+![hollow knight](https://imgur.com/jVWzh4i.png)
+
 
 
 
