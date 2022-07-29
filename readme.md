@@ -1,4 +1,6 @@
 # bevy_sprite3d
+[![Crates.io](https://img.shields.io/crates/v/bevy_sprite3d.svg)](https://crates.io/crates/bevy_sprite3d)
+[![MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./license.md)
 
 Use 2d sprites in a 3d scene. This was my go-to workflow back when I was using
 Unity. This crate replicates it in [bevy](https://bevyengine.org/).
