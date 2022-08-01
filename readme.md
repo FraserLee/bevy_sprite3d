@@ -174,4 +174,13 @@ fn setup(
 
 ```
 
+## Versioning
+
+| `bevy` version | `bevy_sprite3d` version |
+| -------------- | ----------------------- |
+| 0.7            | 1.0                     |
+| 0.8            | 1.1                     |
+
+
+
 
