@@ -46,27 +46,11 @@ examples, please update it!
 ```rust
 use bevy::prelude::*;
 use bevy_sprite3d::*;
-use bevy_asset_loader::{AssetLoader, AssetCollection};
+use bevy_asset_loader::prelude::*;
 
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-enum GameState { Loading, Loaded, }
-
-fn main() {
-    let mut app = App::new();
-
-    AssetLoader::new(GameState::Loading)
-        .continue_to_state(GameState::Loaded)
-        .with_collection::<ImageAssets>()
-        .build(&mut app);
-
-    app.add_state(GameState::Loading)
-        .add_plugins(DefaultPlugins)
-        .add_plugin(Sprite3dPlugin)
-        .add_system_set( SystemSet::on_enter(GameState::Loaded).with_system(setup) );
-
-    app.run();
-}
+enum GameState { Loading, Ready }
 
 #[derive(AssetCollection)]
 struct ImageAssets {
@@ -74,13 +58,33 @@ struct ImageAssets {
     icon: Handle<Image>,
 }
 
+fn main() {
+
+    App::new()
+        .add_loading_state(
+            LoadingState::new(GameState::Loading)
+                .continue_to_state(GameState::Ready)
+                .with_collection::<ImageAssets>()
+        )
+        .add_state(GameState::Loading)
+        .add_plugins(DefaultPlugins)
+        .add_plugin(Sprite3dPlugin)
+        .add_system_set( SystemSet::on_enter(GameState::Ready).with_system(setup) )
+        .run();
+
+}
+
+
 fn setup(
     mut commands: Commands, 
     images: Res<ImageAssets>,
-    mut sprite_params: Sprite3dParams) {
+    mut sprite_params: Sprite3dParams
+) {
 
-    commands.spawn_bundle(OrthographicCameraBundle::new_3d())
-            .insert(Transform::from_xyz(0., 0., 18.5));
+    commands.spawn_bundle(Camera3dBundle::default())
+            .insert(Transform::from_xyz(0., 0., 5.));
+
+    // ----------------------- Spawn a 3D sprite -----------------------------
 
     commands.spawn_bundle(Sprite3d {
             image: images.icon.clone(),
@@ -96,6 +100,8 @@ fn setup(
 
             ..default()
     }.bundle(&mut sprite_params));
+
+    // -----------------------------------------------------------------------
 }
 ```
 
@@ -103,29 +109,13 @@ fn setup(
 
 ```rust
 use bevy::prelude::*;
+use bevy::render::texture::ImageSettings;
 use bevy_sprite3d::*;
-use bevy_asset_loader::{AssetLoader, AssetCollection};
+use bevy_asset_loader::prelude::*;
 
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-enum GameState { Loading, Loaded, }
-
-fn main() {
-    let mut app = App::new();
-
-    AssetLoader::new(GameState::Loading)
-        .continue_to_state(GameState::Loaded)
-        .with_collection::<ImageAssets>()
-        .build(&mut app);
-
-    app.add_state(GameState::Loading)
-        .add_plugins(DefaultPlugins)
-        .add_plugin(Sprite3dPlugin)
-        .add_system_set( SystemSet::on_enter(GameState::Loaded).with_system(setup) );
-
-    app.run();
-}
-
+enum GameState { Loading, Ready }
 
 #[derive(AssetCollection)]
 struct ImageAssets {
@@ -135,13 +125,34 @@ struct ImageAssets {
     run: Handle<TextureAtlas>,
 }
 
+fn main() {
+
+    App::new()
+        .add_loading_state(
+            LoadingState::new(GameState::Loading)
+                .continue_to_state(GameState::Ready)
+                .with_collection::<ImageAssets>()
+        )
+        .insert_resource(ImageSettings::default_nearest())
+        .add_state(GameState::Loading)
+        .add_plugins(DefaultPlugins)
+        .add_plugin(Sprite3dPlugin)
+        .add_system_set( SystemSet::on_enter(GameState::Ready).with_system(setup) )
+        .run();
+
+}
+
+
 fn setup(
     mut commands: Commands, 
     images: Res<ImageAssets>,
-    mut sprite_params: Sprite3dParams) {
+    mut sprite_params: Sprite3dParams
+) {
 
-    commands.spawn_bundle(OrthographicCameraBundle::new_3d())
-            .insert(Transform::from_xyz(0., 0., 18.5));
+    commands.spawn_bundle(Camera3dBundle::default())
+            .insert(Transform::from_xyz(0., 0., 5.));
+
+    // -------------------- Spawn a 3D atlas sprite --------------------------
 
     commands.spawn_bundle(AtlasSprite3d {
             atlas: images.run.clone(),
@@ -157,7 +168,10 @@ fn setup(
 
             ..default()
     }.bundle(&mut sprite_params));
+
+    // -----------------------------------------------------------------------
 }
+
 ```
 
 
