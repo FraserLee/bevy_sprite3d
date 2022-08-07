@@ -103,17 +103,41 @@ fn material(image: Handle<Image>, partial_alpha: bool, unlit: bool) -> StandardM
 
 
 
-// a precursor struct, able to be transformed into a bundle.
+/// A precursor struct for a sprite. Set necessary parameters manually, use
+/// `..default()` for others, then call `bundle()` to to get a `PBRBundle`
+/// that can be spawned into the world.
 pub struct Sprite3d {
-    pub transform: Transform,
-    pub image: Handle<Image>,
-    pub pixels_per_metre: f32, // TODO: ability to specify exact size, with None scaled by image's ratio and other.
-    pub pivot: Option<Vec2>,
-    pub partial_alpha: bool, // false (default) only allows fully opaque or fully transparent 
-                             // pixels (cutoff at 0.5). true allows partially transparent 
-                             // pixels (slightly more expensive, so disabled when not needed).
+    /// the sprite's transform
+    pub transform: Transform, 
 
-    pub unlit: bool, // false (default) allows for lighting.
+    /// the sprite image. See `readme.md` for examples.
+    pub image: Handle<Image>, 
+
+    // TODO: ability to specify exact size, with None scaled by image's ratio and other.
+
+    /// the number of pixels per metre of the sprite, assuming a `Transform::scale` of 1.0.
+    pub pixels_per_metre: f32, 
+
+    /// The sprite's pivot. eg. the point specified by the sprite's 
+    /// transform, around which a rotation will be performed.
+    ///
+    /// - pivot = None will have a center pivot
+    /// - pivot = Some(p) will have an expected range of p \in `(0,0)` to `(1,1)`
+    ///   (though you can go out of bounds without issue)
+    pub pivot: Option<Vec2>,
+
+    /// Whether the sprite should support partial alpha.
+    /// 
+    /// - `false` (default) only allows fully opaque or fully transparent pixels 
+    ///   (cutoff at `0.5`).
+    /// - `true` allows partially transparent pixels 
+    ///   (slightly more expensive, so disabled when not needed).    
+    pub partial_alpha: bool, 
+                             
+                             
+    /// Whether the sprite should be rendered as unlit.
+    /// `false` (default) allows for lighting.
+    pub unlit: bool, 
 }
 
 impl Default for Sprite3d {    
@@ -131,7 +155,7 @@ impl Default for Sprite3d {
 
 impl Sprite3d {
 
-    // creates a bundle of components from the Sprite3d struct.
+    /// creates a bundle of components from the Sprite3d struct.
     pub fn bundle(self, params: &mut Sprite3dParams ) -> PbrBundle {
         // get image dimensions
         let image_size = params.images.get(&self.image).unwrap().texture_descriptor.size;
@@ -190,15 +214,40 @@ impl Sprite3d {
 
 
 
-// Same as Sprite3d, but for sprites in a texture atlas.
+/// Same as Sprite3d, but for sprites in a texture atlas.
+///
+/// A precursor struct for a sprite. Set necessary parameters manually, use
+/// `..default()` for others, then call `bundle()` to to get a `PBRBundle`
+/// that can be spawned into the world.
 pub struct AtlasSprite3d {
+    /// the sprite's transform
     pub transform: Transform,
+    /// the sprite texture atlas. See `readme.md` for examples.
     pub atlas: Handle<TextureAtlas>,
+    /// the sprite's index in the atlas.
     pub index: usize,
 
+    /// the number of pixels per metre of the sprite, assuming a `Transform::scale` of 1.0.
     pub pixels_per_metre: f32,
+
+    /// The sprite's pivot. eg. the point specified by the sprite's
+    /// transform, around which a rotation will be performed.
+    ///
+    /// - pivot = None will have a center pivot
+    /// - pivot = Some(p) will have an expected range of p \in `(0,0)` to `(1,1)`
+    ///   (though you can go out of bounds without issue)
     pub pivot: Option<Vec2>,
+
+    /// Whether the sprite should support partial alpha.
+    ///
+    /// - `false` (default) only allows fully opaque or fully transparent pixels
+    ///   (cutoff at `0.5`).
+    /// - `true` allows partially transparent pixels
+    ///   (slightly more expensive, so disabled when not needed).
     pub partial_alpha: bool,
+
+    /// Whether the sprite should be rendered as unlit.
+    /// `false` (default) allows for lighting.
     pub unlit: bool,
 }
 
@@ -218,6 +267,7 @@ impl Default for AtlasSprite3d {
 
 
 impl AtlasSprite3d {
+    /// creates a bundle of components from the AtlasSprite3d struct.
     pub fn bundle(self, params: &mut Sprite3dParams ) -> PbrBundle {
         let atlas = params.atlases.get(&self.atlas).unwrap();
         let image = params.images.get(&atlas.texture).unwrap();
