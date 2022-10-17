@@ -31,8 +31,8 @@ pub struct Sprite3dParams<'w, 's> {
 }
 
 pub struct Sprite3dRes {
-    pub mesh_cache: HashMap<MeshKey, Handle<Mesh>>,
-    pub material_cache: HashMap<MaterialKey, Handle<StandardMaterial>>,
+    pub mesh_cache: HashMap<[u32; 8], Handle<Mesh>>,
+    pub material_cache: HashMap<(Handle<Image>, bool, bool), Handle<StandardMaterial>>,
 }
 
 impl Default for Sprite3dRes {
@@ -43,27 +43,6 @@ impl Default for Sprite3dRes {
         }
     }
 }
-
-
-
-#[derive(Eq, Hash, PartialEq, Copy, Clone)] pub struct MeshKey(u64);
-#[derive(Eq, Hash, PartialEq, Copy, Clone)] pub struct MaterialKey(u64);
-
-impl MeshKey {
-    fn new(w: u32, h: u32, pivot_x: u32, pivot_y: u32, min_x: u32, min_y: u32, max_x: u32, max_y: u32) -> Self {
-        MeshKey([w, h, pivot_x, pivot_y, min_x, min_y, max_x, max_y].reflect_hash().unwrap())
-    }
-}
-
-impl MaterialKey {
-    fn new(image: Handle<Image>, partial_alpha: bool, unlit: bool) -> Self {
-        MaterialKey((image.reflect_hash().unwrap(), partial_alpha, unlit).reflect_hash().unwrap())
-    }
-}
-
-
-
-
 
 
 
@@ -205,13 +184,12 @@ impl Sprite3d {
             mesh: {
                 let pivot = self.pivot.unwrap_or(Vec2::new(0.5, 0.5));
 
-                let mesh_key = MeshKey::new(
-                        (w * MESH_CACHE_GRANULARITY) as u32,
-                        (h * MESH_CACHE_GRANULARITY) as u32,
-                        (pivot.x * MESH_CACHE_GRANULARITY) as u32,
-                        (pivot.y * MESH_CACHE_GRANULARITY) as u32,
-                        0, 0, 0, 0
-                    );
+                let mesh_key = [(w * MESH_CACHE_GRANULARITY) as u32,
+                                (h * MESH_CACHE_GRANULARITY) as u32,
+                                (pivot.x * MESH_CACHE_GRANULARITY) as u32,
+                                (pivot.y * MESH_CACHE_GRANULARITY) as u32,
+                                0, 0, 0, 0
+                                ];
 
                 // if we have a mesh in the cache, use it.
                 // (greatly reduces number of unique meshes for tilemaps, etc.)
@@ -227,7 +205,7 @@ impl Sprite3d {
             // likewise for material, use the existing if the image is already cached.
             // (possibly look into a bool in Sprite3d to manually disable caching for an individual sprite?)
             material: {
-                let mat_key = MaterialKey::new(self.image.clone_weak(), self.partial_alpha, self.unlit);
+                let mat_key = (self.image.clone(), self.partial_alpha, self.unlit);
 
                 if let Some(material) = params.sr.material_cache.get(&mat_key) { material.clone() }
                 else {
@@ -308,7 +286,7 @@ impl Default for AtlasSprite3d {
 #[derive(Component)]
 pub struct AtlasSprite3dComponent {
     pub index: usize,
-    pub atlas: Vec<MeshKey>,
+    pub atlas: Vec<[u32; 8]>,
 }
 
 #[derive(Bundle)]
@@ -359,16 +337,14 @@ impl AtlasSprite3d {
             rect_pivot += frac_rect.min;
 
 
-            let mesh_key = MeshKey::new(
-                    (w * MESH_CACHE_GRANULARITY) as u32,
-                    (h * MESH_CACHE_GRANULARITY) as u32,
-                    (rect_pivot.x * MESH_CACHE_GRANULARITY) as u32,
-                    (rect_pivot.y * MESH_CACHE_GRANULARITY) as u32,
-                    (frac_rect.min.x * MESH_CACHE_GRANULARITY) as u32,
-                    (frac_rect.min.y * MESH_CACHE_GRANULARITY) as u32,
-                    (frac_rect.max.x * MESH_CACHE_GRANULARITY) as u32,
-                    (frac_rect.max.y * MESH_CACHE_GRANULARITY) as u32
-                );
+            let mesh_key = [(w * MESH_CACHE_GRANULARITY) as u32,
+                            (h * MESH_CACHE_GRANULARITY) as u32,
+                            (rect_pivot.x * MESH_CACHE_GRANULARITY) as u32,
+                            (rect_pivot.y * MESH_CACHE_GRANULARITY) as u32,
+                            (frac_rect.min.x * MESH_CACHE_GRANULARITY) as u32,
+                            (frac_rect.min.y * MESH_CACHE_GRANULARITY) as u32,
+                            (frac_rect.max.x * MESH_CACHE_GRANULARITY) as u32,
+                            (frac_rect.max.y * MESH_CACHE_GRANULARITY) as u32];
 
             mesh_keys.push(mesh_key);
 
@@ -395,7 +371,7 @@ impl AtlasSprite3d {
             pbr: PbrBundle {
                 mesh: params.sr.mesh_cache.get(&mesh_keys[self.index]).unwrap().clone(),
                 material: {
-                    let mat_key = MaterialKey::new( atlas.texture.clone_weak(), self.partial_alpha, self.unlit );
+                    let mat_key = (atlas.texture.clone(), self.partial_alpha, self.unlit);
                     if let Some(material) = params.sr.material_cache.get(&mat_key) { material.clone() } 
                     else {
                         let material = params.materials.add(material(atlas.texture.clone(), self.partial_alpha, self.unlit));
@@ -414,14 +390,6 @@ impl AtlasSprite3d {
         }
     }
 }
-
-
-
-
-
-
-
-
 
 
 
