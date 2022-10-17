@@ -10,4 +10,4 @@ repository = "https://github.com/FraserLee/bevy_sprite3d"
 keywords = ["gamedev", "bevy", "sprite", "3d"]
 
 [dependencies]
-bevy = "0.8.0"
+bevy = "0.8"
