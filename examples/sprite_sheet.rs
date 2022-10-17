@@ -28,10 +28,13 @@ fn main() {
         .add_plugins(DefaultPlugins)
         .add_plugin(Sprite3dPlugin)
         .add_system_set( SystemSet::on_enter(GameState::Ready).with_system(setup) )
+        .add_system_set( SystemSet::on_update(GameState::Ready).with_system(animate_sprite) )
         .run();
 
 }
 
+#[derive(Component, Deref, DerefMut)]
+struct AnimationTimer(Timer);
 
 fn setup(
     mut commands: Commands, 
@@ -41,7 +44,6 @@ fn setup(
 
     commands.spawn_bundle(Camera3dBundle::default())
             .insert(Transform::from_xyz(0., 0., 5.));
-
     // -------------------- Spawn a 3D atlas sprite --------------------------
 
     commands.spawn_bundle(AtlasSprite3d {
@@ -57,8 +59,21 @@ fn setup(
             // pivot: Some(Vec2::new(0.5, 0.5)),
 
             ..default()
-    }.bundle(&mut sprite_params));
+    }.bundle(&mut sprite_params))
+    .insert(AnimationTimer(Timer::from_seconds(0.1, true)));
 
     // -----------------------------------------------------------------------
 }
 
+
+fn animate_sprite(
+    time: Res<Time>,
+    mut query: Query<(&mut AnimationTimer, &mut AtlasSprite3dComponent)>,
+) {
+    for (mut timer, mut sprite) in query.iter_mut() {
+        timer.tick(time.delta());
+        if timer.just_finished() {
+            sprite.index = (sprite.index + 1) % sprite.atlas.len();
+        }
+    }
+}

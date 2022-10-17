@@ -7,6 +7,7 @@ pub struct Sprite3dPlugin;
 impl Plugin for Sprite3dPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Sprite3dRes>();
+        app.add_system_to_stage(CoreStage::PostUpdate, sprite3d_system);
     }
 }
 
@@ -34,7 +35,6 @@ pub struct Sprite3dRes {
     pub material_cache: HashMap<(Handle<Image>, bool, bool), Handle<StandardMaterial>>,
 }
 
-
 impl Default for Sprite3dRes {
     fn default() -> Self {
         Sprite3dRes {
@@ -44,6 +44,22 @@ impl Default for Sprite3dRes {
     }
 }
 
+
+
+
+
+
+
+// Update the mesh of any AtlasSprite3d when its index changes.
+fn sprite3d_system(
+    sprite_params: Sprite3dParams,
+    mut query: Query<(&mut Handle<Mesh>, &AtlasSprite3dComponent), Changed<AtlasSprite3dComponent>>,
+) {
+    for (mut mesh, params) in query.iter_mut() {
+        // this unwrap will always succeed, unless mesh_cache is corrupted.
+        *mesh = sprite_params.sr.mesh_cache.get(&params.atlas[params.index]).unwrap().clone();
+    }
+}
 
 
 
@@ -153,10 +169,22 @@ impl Default for Sprite3d {
     }
 }
 
+
+// just a marker for queries at the moment, could be expanded later if needed.
+#[derive(Component)]
+pub struct Sprite3dComponent { } 
+
+#[derive(Bundle)]
+pub struct Sprite3dBundle {
+    pub params: Sprite3dComponent,
+    #[bundle]
+    pub pbr: PbrBundle,
+}
+
 impl Sprite3d {
 
     /// creates a bundle of components from the Sprite3d struct.
-    pub fn bundle(self, params: &mut Sprite3dParams ) -> PbrBundle {
+    pub fn bundle(self, params: &mut Sprite3dParams ) -> Sprite3dBundle {
         // get image dimensions
         let image_size = params.images.get(&self.image).unwrap().texture_descriptor.size;
         // w & h are the world-space size of the sprite.
@@ -164,44 +192,47 @@ impl Sprite3d {
         let h = (image_size.height as f32) / self.pixels_per_metre;
 
 
-        return PbrBundle {
-            mesh: {
-                let pivot = self.pivot.unwrap_or(Vec2::new(0.5, 0.5));
+        return Sprite3dBundle {
+            params: Sprite3dComponent { },
+            pbr: PbrBundle {
+                mesh: {
+                    let pivot = self.pivot.unwrap_or(Vec2::new(0.5, 0.5));
 
-                let hash_key = [(w * MESH_CACHE_GRANULARITY) as u32,
-                                (h * MESH_CACHE_GRANULARITY) as u32,
-                                (pivot.x * MESH_CACHE_GRANULARITY) as u32,
-                                (pivot.y * MESH_CACHE_GRANULARITY) as u32,
-                                0, 0, 0, 0
-                                ];
+                    let mesh_key = [(w * MESH_CACHE_GRANULARITY) as u32,
+                                    (h * MESH_CACHE_GRANULARITY) as u32,
+                                    (pivot.x * MESH_CACHE_GRANULARITY) as u32,
+                                    (pivot.y * MESH_CACHE_GRANULARITY) as u32,
+                                    0, 0, 0, 0
+                                    ];
 
-                // if we have a mesh in the cache, use it.
-                // (greatly reduces number of unique meshes for tilemaps, etc.)
-                if let Some(mesh) = params.sr.mesh_cache.get(&hash_key) { mesh.clone() } 
-                else { // otherwise, create a new mesh and cache it.
-                    let mesh = params.meshes.add(quad( w, h, self.pivot ));
-                    params.sr.mesh_cache.insert(hash_key, mesh.clone());
-                    mesh
-                }
-            },
+                    // if we have a mesh in the cache, use it.
+                    // (greatly reduces number of unique meshes for tilemaps, etc.)
+                    if let Some(mesh) = params.sr.mesh_cache.get(&mesh_key) { mesh.clone() } 
+                    else { // otherwise, create a new mesh and cache it.
+                        let mesh = params.meshes.add(quad( w, h, self.pivot ));
+                        params.sr.mesh_cache.insert(mesh_key, mesh.clone());
+                        mesh
+                    }
+                },
 
 
-            // likewise for material, use the existing if the image is already cached.
-            // (possibly look into a bool in Sprite3d to manually disable caching for an individual sprite?)
-            material: {
-                let mat_key = (self.image.clone(), self.partial_alpha, self.unlit);
+                // likewise for material, use the existing if the image is already cached.
+                // (possibly look into a bool in Sprite3d to manually disable caching for an individual sprite?)
+                material: {
+                    let mat_key = (self.image.clone(), self.partial_alpha, self.unlit);
 
-                if let Some(material) = params.sr.material_cache.get(&mat_key) { material.clone() }
-                else {
-                    let material = params.materials.add(material(self.image.clone(), self.partial_alpha, self.unlit));
-                    params.sr.material_cache.insert(mat_key, material.clone());
-                    material
-                }
-            },
+                    if let Some(material) = params.sr.material_cache.get(&mat_key) { material.clone() }
+                    else {
+                        let material = params.materials.add(material(self.image.clone(), self.partial_alpha, self.unlit));
+                        params.sr.material_cache.insert(mat_key, material.clone());
+                        material
+                    }
+                },
 
-            transform: self.transform,
+                transform: self.transform,
 
-            ..default()
+                ..default()
+            }
         }
     }
 }
@@ -266,80 +297,114 @@ impl Default for AtlasSprite3d {
 }
 
 
+
+#[derive(Component)]
+pub struct AtlasSprite3dComponent {
+    pub index: usize,
+    pub atlas: Vec<[u32; 8]>,
+}
+
+#[derive(Bundle)]
+pub struct AtlasSprite3dBundle {
+    pub params: AtlasSprite3dComponent,
+    #[bundle]
+    pub pbr: PbrBundle,
+}
+
+
+
+
 impl AtlasSprite3d {
     /// creates a bundle of components from the AtlasSprite3d struct.
-    pub fn bundle(self, params: &mut Sprite3dParams ) -> PbrBundle {
+    pub fn bundle(self, params: &mut Sprite3dParams ) -> AtlasSprite3dBundle {
         let atlas = params.atlases.get(&self.atlas).unwrap();
         let image = params.images.get(&atlas.texture).unwrap();
         let image_size = image.texture_descriptor.size;
-        let rect = atlas.textures[self.index];
 
-        let w = rect.width() / self.pixels_per_metre;
-        let h = rect.height() / self.pixels_per_metre;
+        let pivot = self.pivot.unwrap_or(Vec2::new(0.5, 0.5));
+        // cache all the meshes for the atlas (if they haven't been already)
+        // so that we can change the index later and not have to re-create the mesh.
 
-        let frac_rect = bevy::sprite::Rect {
-            min: Vec2::new(rect.min.x / (image_size.width as f32),
-                           rect.min.y / (image_size.height as f32)),
-
-            max: Vec2::new(rect.max.x / (image_size.width as f32),
-                           rect.max.y / (image_size.height as f32)),
-        };
-
-        return PbrBundle {
-            mesh: {
-                let mut pivot = self.pivot.unwrap_or(Vec2::new(0.5, 0.5));
-
-                // scale pivot to be relative to the rect within the atlas.
-                pivot.x *= frac_rect.width();
-                pivot.y *= frac_rect.height();
-                pivot += frac_rect.min;
+        // store all lookup keys in a vec so we later know which meshes to retrieve.
+        let mut mesh_keys = Vec::new();
 
 
-                let hash_key = [(w * MESH_CACHE_GRANULARITY) as u32,
-                                (h * MESH_CACHE_GRANULARITY) as u32,
-                                (pivot.x * MESH_CACHE_GRANULARITY) as u32,
-                                (pivot.y * MESH_CACHE_GRANULARITY) as u32,
-                                (frac_rect.min.x * MESH_CACHE_GRANULARITY) as u32,
-                                (frac_rect.min.y * MESH_CACHE_GRANULARITY) as u32,
-                                (frac_rect.max.x * MESH_CACHE_GRANULARITY) as u32,
-                                (frac_rect.max.y * MESH_CACHE_GRANULARITY) as u32];
+        for i in 0..atlas.textures.len() {
+
+            let rect = atlas.textures[i];
+
+            let w = rect.width() / self.pixels_per_metre;
+            let h = rect.height() / self.pixels_per_metre;
+
+            let frac_rect = bevy::sprite::Rect {
+                min: Vec2::new(rect.min.x / (image_size.width as f32),
+                               rect.min.y / (image_size.height as f32)),
+
+                max: Vec2::new(rect.max.x / (image_size.width as f32),
+                               rect.max.y / (image_size.height as f32)),
+            };
+
+            let mut rect_pivot = pivot.clone();
+
+            // scale pivot to be relative to the rect within the atlas.
+            rect_pivot.x *= frac_rect.width();
+            rect_pivot.y *= frac_rect.height();
+            rect_pivot += frac_rect.min;
 
 
-                if let Some(mesh) = params.sr.mesh_cache.get(&hash_key) { mesh.clone() } 
-                else {
-                    let mut mesh = quad( w, h, self.pivot );
-                    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, vec![
-                        [frac_rect.min.x, frac_rect.max.y],
-                        [frac_rect.max.x, frac_rect.max.y],
-                        [frac_rect.min.x, frac_rect.min.y],
-                        [frac_rect.max.x, frac_rect.min.y],
+            let mesh_key = [(w * MESH_CACHE_GRANULARITY) as u32,
+                            (h * MESH_CACHE_GRANULARITY) as u32,
+                            (rect_pivot.x * MESH_CACHE_GRANULARITY) as u32,
+                            (rect_pivot.y * MESH_CACHE_GRANULARITY) as u32,
+                            (frac_rect.min.x * MESH_CACHE_GRANULARITY) as u32,
+                            (frac_rect.min.y * MESH_CACHE_GRANULARITY) as u32,
+                            (frac_rect.max.x * MESH_CACHE_GRANULARITY) as u32,
+                            (frac_rect.max.y * MESH_CACHE_GRANULARITY) as u32];
 
-                        [frac_rect.min.x, frac_rect.max.y],
-                        [frac_rect.max.x, frac_rect.max.y],
-                        [frac_rect.min.x, frac_rect.min.y],
-                        [frac_rect.max.x, frac_rect.min.y],
-                    ]);
-                    let mesh_h = params.meshes.add(mesh);
-                    params.sr.mesh_cache.insert(hash_key, mesh_h.clone());
-                    mesh_h
-                }
+            mesh_keys.push(mesh_key);
+
+            // if we don't have a mesh in the cache, create it.
+            if !params.sr.mesh_cache.contains_key(&mesh_key) {
+                let mut mesh = quad( w, h, Some(pivot) );
+                mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, vec![
+                    [frac_rect.min.x, frac_rect.max.y],
+                    [frac_rect.max.x, frac_rect.max.y],
+                    [frac_rect.min.x, frac_rect.min.y],
+                    [frac_rect.max.x, frac_rect.min.y],
+
+                    [frac_rect.min.x, frac_rect.max.y],
+                    [frac_rect.max.x, frac_rect.max.y],
+                    [frac_rect.min.x, frac_rect.min.y],
+                    [frac_rect.max.x, frac_rect.min.y],
+                ]);
+                let mesh_h = params.meshes.add(mesh);
+                params.sr.mesh_cache.insert(mesh_key, mesh_h);
+            }
+        }
+
+        return AtlasSprite3dBundle {
+            pbr: PbrBundle {
+                mesh: params.sr.mesh_cache.get(&mesh_keys[self.index]).unwrap().clone(),
+                material: {
+                    let mat_key = (atlas.texture.clone(), self.partial_alpha, self.unlit);
+                    if let Some(material) = params.sr.material_cache.get(&mat_key) { material.clone() } 
+                    else {
+                        let material = params.materials.add(material(atlas.texture.clone(), self.partial_alpha, self.unlit));
+                        params.sr.material_cache.insert(mat_key, material.clone());
+                        material
+                    }
+                },
+
+                transform: self.transform,
+                ..default()
             },
-
-            material: {
-                let mat_key = (atlas.texture.clone(), self.partial_alpha, self.unlit);
-                if let Some(material) = params.sr.material_cache.get(&mat_key) { material.clone() } 
-                else {
-                    let material = params.materials.add(material(atlas.texture.clone(), self.partial_alpha, self.unlit));
-                    params.sr.material_cache.insert(mat_key, material.clone());
-                    material
-                }
+            params: AtlasSprite3dComponent {
+                index: self.index,
+                atlas: mesh_keys,
             },
-
-            transform: self.transform,
-
-            ..default()
         }
     }
 }
+
 
 
