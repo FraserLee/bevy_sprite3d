@@ -169,10 +169,22 @@ impl Default for Sprite3d {
     }
 }
 
+
+// just a marker for queries at the moment, could be expanded later if needed.
+#[derive(Component)]
+pub struct Sprite3dComponent { } 
+
+#[derive(Bundle)]
+pub struct Sprite3dBundle {
+    pub params: Sprite3dComponent,
+    #[bundle]
+    pub pbr: PbrBundle,
+}
+
 impl Sprite3d {
 
     /// creates a bundle of components from the Sprite3d struct.
-    pub fn bundle(self, params: &mut Sprite3dParams ) -> PbrBundle {
+    pub fn bundle(self, params: &mut Sprite3dParams ) -> Sprite3dBundle {
         // get image dimensions
         let image_size = params.images.get(&self.image).unwrap().texture_descriptor.size;
         // w & h are the world-space size of the sprite.
@@ -180,44 +192,47 @@ impl Sprite3d {
         let h = (image_size.height as f32) / self.pixels_per_metre;
 
 
-        return PbrBundle {
-            mesh: {
-                let pivot = self.pivot.unwrap_or(Vec2::new(0.5, 0.5));
+        return Sprite3dBundle {
+            params: Sprite3dComponent { },
+            pbr: PbrBundle {
+                mesh: {
+                    let pivot = self.pivot.unwrap_or(Vec2::new(0.5, 0.5));
 
-                let mesh_key = [(w * MESH_CACHE_GRANULARITY) as u32,
-                                (h * MESH_CACHE_GRANULARITY) as u32,
-                                (pivot.x * MESH_CACHE_GRANULARITY) as u32,
-                                (pivot.y * MESH_CACHE_GRANULARITY) as u32,
-                                0, 0, 0, 0
-                                ];
+                    let mesh_key = [(w * MESH_CACHE_GRANULARITY) as u32,
+                                    (h * MESH_CACHE_GRANULARITY) as u32,
+                                    (pivot.x * MESH_CACHE_GRANULARITY) as u32,
+                                    (pivot.y * MESH_CACHE_GRANULARITY) as u32,
+                                    0, 0, 0, 0
+                                    ];
 
-                // if we have a mesh in the cache, use it.
-                // (greatly reduces number of unique meshes for tilemaps, etc.)
-                if let Some(mesh) = params.sr.mesh_cache.get(&mesh_key) { mesh.clone() } 
-                else { // otherwise, create a new mesh and cache it.
-                    let mesh = params.meshes.add(quad( w, h, self.pivot ));
-                    params.sr.mesh_cache.insert(mesh_key, mesh.clone());
-                    mesh
-                }
-            },
+                    // if we have a mesh in the cache, use it.
+                    // (greatly reduces number of unique meshes for tilemaps, etc.)
+                    if let Some(mesh) = params.sr.mesh_cache.get(&mesh_key) { mesh.clone() } 
+                    else { // otherwise, create a new mesh and cache it.
+                        let mesh = params.meshes.add(quad( w, h, self.pivot ));
+                        params.sr.mesh_cache.insert(mesh_key, mesh.clone());
+                        mesh
+                    }
+                },
 
 
-            // likewise for material, use the existing if the image is already cached.
-            // (possibly look into a bool in Sprite3d to manually disable caching for an individual sprite?)
-            material: {
-                let mat_key = (self.image.clone(), self.partial_alpha, self.unlit);
+                // likewise for material, use the existing if the image is already cached.
+                // (possibly look into a bool in Sprite3d to manually disable caching for an individual sprite?)
+                material: {
+                    let mat_key = (self.image.clone(), self.partial_alpha, self.unlit);
 
-                if let Some(material) = params.sr.material_cache.get(&mat_key) { material.clone() }
-                else {
-                    let material = params.materials.add(material(self.image.clone(), self.partial_alpha, self.unlit));
-                    params.sr.material_cache.insert(mat_key, material.clone());
-                    material
-                }
-            },
+                    if let Some(material) = params.sr.material_cache.get(&mat_key) { material.clone() }
+                    else {
+                        let material = params.materials.add(material(self.image.clone(), self.partial_alpha, self.unlit));
+                        params.sr.material_cache.insert(mat_key, material.clone());
+                        material
+                    }
+                },
 
-            transform: self.transform,
+                transform: self.transform,
 
-            ..default()
+                ..default()
+            }
         }
     }
 }
@@ -390,15 +405,6 @@ impl AtlasSprite3d {
         }
     }
 }
-
-
-
-
-
-
-
-
-
 
 
 
