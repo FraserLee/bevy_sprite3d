@@ -61,7 +61,7 @@ fn setup(
     // ------------------- Texture Atlas (Sprite Sheet) ------------------------
 
     commands.spawn_bundle(AtlasSprite3d {
-            atlas: images.run.clone(),
+            atlas: images.sprite_sheet.clone(),
 
             pixels_per_metre: 32.,
             partial_alpha: true,
