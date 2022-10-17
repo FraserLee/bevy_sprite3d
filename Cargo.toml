@@ -11,3 +11,6 @@ keywords = ["gamedev", "bevy", "sprite", "3d"]
 
 [dependencies]
 bevy = "0.8"
+
+[dev-dependencies]
+bevy_asset_loader = { version = "0.12.1", features = ["2d"] }
