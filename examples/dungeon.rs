@@ -11,9 +11,8 @@ enum GameState { Loading, Ready }
 
 #[derive(AssetCollection, Resource)]
 struct ImageAssets {
-    #[asset(texture_atlas(tile_size_x = 16., tile_size_y = 16.))]
-    #[asset(texture_atlas(columns = 30, rows = 35))]
-    #[asset(path = "dungeon/tileset.png")]
+    #[asset(texture_atlas(tile_size_x = 16., tile_size_y = 16., columns = 30, rows = 35, padding_x = 10., padding_y = 10., offset_x = 5., offset_y = 5.))]
+    #[asset(path = "dungeon/art/tileset_padded.png")]
     tileset: Handle<TextureAtlas>,
 }
 
