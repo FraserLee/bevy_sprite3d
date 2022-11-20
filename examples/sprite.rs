@@ -6,7 +6,7 @@ use bevy_asset_loader::prelude::*;
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 enum GameState { Loading, Ready }
 
-#[derive(AssetCollection)]
+#[derive(AssetCollection, Resource)]
 struct ImageAssets {
     #[asset(path = "icon.png")]
     icon: Handle<Image>,
@@ -35,12 +35,12 @@ fn setup(
     mut sprite_params: Sprite3dParams
 ) {
 
-    commands.spawn_bundle(Camera3dBundle::default())
+    commands.spawn(Camera3dBundle::default())
             .insert(Transform::from_xyz(0., 0., 5.));
 
     // ----------------------- Spawn a 3D sprite -----------------------------
 
-    commands.spawn_bundle(Sprite3d {
+    commands.spawn(Sprite3d {
             image: images.icon.clone(),
 
             pixels_per_metre: 400.,

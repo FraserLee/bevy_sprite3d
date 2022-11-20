@@ -91,6 +91,7 @@ template to get started.
 
 | `bevy` version | `bevy_sprite3d` version |
 | -------------- | ----------------------- |
+| 0.9            | 2.1                     |
 | 0.8            | 2.0                     |
 | 0.8            | 1.1                     |
 | 0.7            | 1.0                     |

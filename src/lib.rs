@@ -30,6 +30,7 @@ pub struct Sprite3dParams<'w, 's> {
     marker: PhantomData<&'s usize>,
 }
 
+#[derive(Resource)]
 pub struct Sprite3dRes {
     pub mesh_cache: HashMap<[u32; 8], Handle<Mesh>>,
     pub material_cache: HashMap<(Handle<Image>, bool, bool), Handle<StandardMaterial>>,
@@ -336,7 +337,7 @@ impl AtlasSprite3d {
             let w = rect.width() / self.pixels_per_metre;
             let h = rect.height() / self.pixels_per_metre;
 
-            let frac_rect = bevy::sprite::Rect {
+            let frac_rect = bevy::math::Rect {
                 min: Vec2::new(rect.min.x / (image_size.width as f32),
                                rect.min.y / (image_size.height as f32)),
 
