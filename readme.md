@@ -55,6 +55,7 @@ fn setup(
 
             // transform: Transform::from_xyz(0., 0., 0.),
             // pivot: Some(Vec2::new(0.5, 0.5)),
+            // double_sided: true,
 
     }.bundle(&mut sprite_params));
 
@@ -73,6 +74,7 @@ fn setup(
 
             // transform: Transform::from_xyz(0., 0., 0.),
             // pivot: Some(Vec2::new(0.5, 0.5)),
+            // double_sided: true,
 
     }.bundle(&mut sprite_params));
 }
@@ -91,10 +93,12 @@ template to get started.
 
 | `bevy` version | `bevy_sprite3d` version |
 | -------------- | ----------------------- |
+| 0.9            | 2.2                     |
 | 0.9            | 2.1                     |
 | 0.8            | 2.0                     |
 | 0.8            | 1.1                     |
 | 0.7            | 1.0                     |
+
 
 
 
