@@ -30,10 +30,26 @@ pub struct Sprite3dParams<'w, 's> {
     marker: PhantomData<&'s usize>,
 }
 
+#[derive(Eq, Hash, PartialEq)]
+pub struct MatKey{
+    image: Handle<Image>,
+    partial_alpha: bool,
+    unlit: bool,
+    emissive: [u8; 4],
+}
+
+fn reduce_colour(c: Color) -> [u8; 4] { [
+        (c.r() * 255.) as u8,
+        (c.g() * 255.) as u8,
+        (c.b() * 255.) as u8,
+        (c.a() * 255.) as u8,
+] }
+
+
 #[derive(Resource)]
 pub struct Sprite3dRes {
     pub mesh_cache: HashMap<[u32; 9], Handle<Mesh>>,
-    pub material_cache: HashMap<(Handle<Image>, bool, bool), Handle<StandardMaterial>>,
+    pub material_cache: HashMap<MatKey, Handle<StandardMaterial>>,
 }
 
 impl Default for Sprite3dRes {
@@ -104,7 +120,7 @@ fn quad(w: f32, h: f32, pivot: Option<Vec2>, double_sided: bool) -> Mesh {
 
 
 // generate a StandardMaterial useful for rendering a sprite
-fn material(image: Handle<Image>, partial_alpha: bool, unlit: bool) -> StandardMaterial {
+fn material(image: Handle<Image>, partial_alpha: bool, unlit: bool, emissive: Color) -> StandardMaterial {
     StandardMaterial {
         base_color_texture: Some(image),
         cull_mode: Some(Face::Back),
@@ -112,8 +128,8 @@ fn material(image: Handle<Image>, partial_alpha: bool, unlit: bool) -> StandardM
                     else { AlphaMode::Mask(0.5) },
         unlit,
         perceptual_roughness: 0.5,
-        metallic: 0.4,
         reflectance: 0.15,
+        emissive,
 
         ..Default::default()
     }
@@ -163,6 +179,9 @@ pub struct Sprite3d {
     /// in reverse order.
     pub double_sided: bool,
 
+    /// An emissive colour, if the sprite should emit light.
+    /// `Color::Black` (default) does nothing.
+    pub emissive: Color,
 }
 
 impl Default for Sprite3d {    
@@ -175,6 +194,7 @@ impl Default for Sprite3d {
             partial_alpha: false,
             unlit: false,
             double_sided: true,
+            emissive: Color::BLACK,
         }
     }
 }
@@ -230,11 +250,16 @@ impl Sprite3d {
                 // likewise for material, use the existing if the image is already cached.
                 // (possibly look into a bool in Sprite3d to manually disable caching for an individual sprite?)
                 material: {
-                    let mat_key = (self.image.clone(), self.partial_alpha, self.unlit);
+                    let mat_key = MatKey {
+                        image: self.image.clone(),
+                        partial_alpha: self.partial_alpha,
+                        unlit: self.unlit,
+                        emissive: reduce_colour(self.emissive),
+                    };
 
                     if let Some(material) = params.sr.material_cache.get(&mat_key) { material.clone() }
                     else {
-                        let material = params.materials.add(material(self.image.clone(), self.partial_alpha, self.unlit));
+                        let material = params.materials.add(material(self.image.clone(), self.partial_alpha, self.unlit, self.emissive));
                         params.sr.material_cache.insert(mat_key, material.clone());
                         material
                     }
@@ -296,6 +321,10 @@ pub struct AtlasSprite3d {
     /// `true` (default) adds a second set of indices, describing the same tris
     /// in reverse order.
     pub double_sided: bool,
+
+    /// An emissive colour, if the sprite should emit light.
+    /// `Color::Black` (default) does nothing.
+    pub emissive: Color,
 }
 
 impl Default for AtlasSprite3d {
@@ -309,6 +338,7 @@ impl Default for AtlasSprite3d {
             partial_alpha: false,
             unlit: false,
             double_sided: true,
+            emissive: Color::BLACK,
         }
     }
 }
@@ -404,10 +434,15 @@ impl AtlasSprite3d {
             pbr: PbrBundle {
                 mesh: params.sr.mesh_cache.get(&mesh_keys[self.index]).unwrap().clone(),
                 material: {
-                    let mat_key = (atlas.texture.clone(), self.partial_alpha, self.unlit);
+                    let mat_key = MatKey {
+                        image: atlas.texture.clone(),
+                        partial_alpha: self.partial_alpha,
+                        unlit: self.unlit,
+                        emissive: reduce_colour(self.emissive),
+                    };
                     if let Some(material) = params.sr.material_cache.get(&mat_key) { material.clone() } 
                     else {
-                        let material = params.materials.add(material(atlas.texture.clone(), self.partial_alpha, self.unlit));
+                        let material = params.materials.add(material(atlas.texture.clone(), self.partial_alpha, self.unlit, self.emissive));
                         params.sr.material_cache.insert(mat_key, material.clone());
                         material
                     }

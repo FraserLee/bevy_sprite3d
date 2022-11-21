@@ -20,6 +20,10 @@ Example using `bevy_sprite3d`:
 
 ![chaos](assets/example.gif)
 
+[`examples/dungeon.rs`](./examples/dungeon.rs) for a more complicated scene. Try
+this one with `cargo run --example dungeon`.
+[![](http://img.youtube.com/vi/vnKjkvoHnPY/0.jpg)](http://www.youtube.com/watch?v=vnKjkvoHnPY)
+
 Some more examples. These don't use bevy, but demonstrate the effect style:
 
 ![the last night](https://cdn.cloudflare.steamstatic.com/steam/apps/612400/extras/TLN_Crowd_01_compressed.png)
@@ -93,6 +97,7 @@ template to get started.
 
 | `bevy` version | `bevy_sprite3d` version |
 | -------------- | ----------------------- |
+| 0.9            | 2.3                     |
 | 0.9            | 2.2                     |
 | 0.9            | 2.1                     |
 | 0.8            | 2.0                     |
