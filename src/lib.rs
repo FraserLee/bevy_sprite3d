@@ -32,7 +32,7 @@ pub struct Sprite3dParams<'w, 's> {
 
 #[derive(Resource)]
 pub struct Sprite3dRes {
-    pub mesh_cache: HashMap<[u32; 8], Handle<Mesh>>,
+    pub mesh_cache: HashMap<[u32; 9], Handle<Mesh>>,
     pub material_cache: HashMap<(Handle<Image>, bool, bool), Handle<StandardMaterial>>,
 }
 
@@ -69,7 +69,7 @@ fn sprite3d_system(
 // pivot = None will have a center pivot
 // pivot = Some(p) will have an expected range of p \in (0,0) to (1,1)
 // (though you can go out of bounds without issue)
-fn quad(w: f32, h: f32, pivot: Option<Vec2>) -> Mesh {
+fn quad(w: f32, h: f32, pivot: Option<Vec2>, double_sided: bool) -> Mesh {
     let w2 = w / 2.0;
     let h2 = h / 2.0;
     let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
@@ -92,8 +92,10 @@ fn quad(w: f32, h: f32, pivot: Option<Vec2>) -> Mesh {
     mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, vec![[0.0, 1.0], [1.0, 1.0], [0.0, 0.0], [1.0, 0.0],
                                                      [0.0, 1.0], [1.0, 1.0], [0.0, 0.0], [1.0, 0.0]]);
 
-    mesh.set_indices(Some(Indices::U32(vec![0, 1, 2, 1, 3, 2,
-                                            5, 4, 6, 7, 5, 6])));
+    mesh.set_indices(Some(Indices::U32(
+        if double_sided { vec![0, 1, 2, 1, 3, 2, 5, 4, 6, 7, 5, 6] } 
+        else {            vec![0, 1, 2, 1, 3, 2] }
+    )));
 
     mesh
 }
@@ -155,6 +157,12 @@ pub struct Sprite3d {
     /// Whether the sprite should be rendered as unlit.
     /// `false` (default) allows for lighting.
     pub unlit: bool, 
+
+    /// Whether the sprite should be rendered as double-sided. 
+    /// `true` (default) adds a second set of indices, describing the same tris 
+    /// in reverse order.
+    pub double_sided: bool,
+
 }
 
 impl Default for Sprite3d {    
@@ -166,6 +174,7 @@ impl Default for Sprite3d {
             pivot: None,
             partial_alpha: false,
             unlit: false,
+            double_sided: true,
         }
     }
 }
@@ -203,6 +212,7 @@ impl Sprite3d {
                                     (h * MESH_CACHE_GRANULARITY) as u32,
                                     (pivot.x * MESH_CACHE_GRANULARITY) as u32,
                                     (pivot.y * MESH_CACHE_GRANULARITY) as u32,
+                                    self.double_sided as u32,
                                     0, 0, 0, 0
                                     ];
 
@@ -210,7 +220,7 @@ impl Sprite3d {
                     // (greatly reduces number of unique meshes for tilemaps, etc.)
                     if let Some(mesh) = params.sr.mesh_cache.get(&mesh_key) { mesh.clone() } 
                     else { // otherwise, create a new mesh and cache it.
-                        let mesh = params.meshes.add(quad( w, h, self.pivot ));
+                        let mesh = params.meshes.add(quad( w, h, self.pivot, self.double_sided ));
                         params.sr.mesh_cache.insert(mesh_key, mesh.clone());
                         mesh
                     }
@@ -281,6 +291,11 @@ pub struct AtlasSprite3d {
     /// Whether the sprite should be rendered as unlit.
     /// `false` (default) allows for lighting.
     pub unlit: bool,
+
+    /// Whether the sprite should be rendered as double-sided.
+    /// `true` (default) adds a second set of indices, describing the same tris
+    /// in reverse order.
+    pub double_sided: bool,
 }
 
 impl Default for AtlasSprite3d {
@@ -293,6 +308,7 @@ impl Default for AtlasSprite3d {
             pivot: None,
             partial_alpha: false,
             unlit: false,
+            double_sided: true,
         }
     }
 }
@@ -302,7 +318,7 @@ impl Default for AtlasSprite3d {
 #[derive(Component)]
 pub struct AtlasSprite3dComponent {
     pub index: usize,
-    pub atlas: Vec<[u32; 8]>,
+    pub atlas: Vec<[u32; 9]>,
 }
 
 #[derive(Bundle)]
@@ -357,6 +373,7 @@ impl AtlasSprite3d {
                             (h * MESH_CACHE_GRANULARITY) as u32,
                             (rect_pivot.x * MESH_CACHE_GRANULARITY) as u32,
                             (rect_pivot.y * MESH_CACHE_GRANULARITY) as u32,
+                            self.double_sided as u32,
                             (frac_rect.min.x * MESH_CACHE_GRANULARITY) as u32,
                             (frac_rect.min.y * MESH_CACHE_GRANULARITY) as u32,
                             (frac_rect.max.x * MESH_CACHE_GRANULARITY) as u32,
@@ -366,7 +383,7 @@ impl AtlasSprite3d {
 
             // if we don't have a mesh in the cache, create it.
             if !params.sr.mesh_cache.contains_key(&mesh_key) {
-                let mut mesh = quad( w, h, Some(pivot) );
+                let mut mesh = quad( w, h, Some(pivot), self.double_sided );
                 mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, vec![
                     [frac_rect.min.x, frac_rect.max.y],
                     [frac_rect.max.x, frac_rect.max.y],
