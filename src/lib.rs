@@ -112,7 +112,6 @@ fn material(image: Handle<Image>, partial_alpha: bool, unlit: bool) -> StandardM
                     else { AlphaMode::Mask(0.5) },
         unlit,
         perceptual_roughness: 0.5,
-        metallic: 0.4,
         reflectance: 0.15,
 
         ..Default::default()
