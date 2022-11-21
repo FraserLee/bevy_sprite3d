@@ -1,7 +1,10 @@
 use bevy::prelude::*;
 use bevy_sprite3d::*;
 use bevy_asset_loader::prelude::*;
+use bevy::utils::Duration;
 use bevy::core_pipeline::clear_color::ClearColorConfig;
+use bevy::core_pipeline::bloom::BloomSettings;
+use bevy::render::camera::PerspectiveProjection;
 use rand::{prelude::SliceRandom, Rng};
 
 use bevy_inspector_egui::WorldInspectorPlugin;
@@ -16,6 +19,13 @@ struct ImageAssets {
     tileset: Handle<TextureAtlas>,
 }
 
+#[derive(Component)]
+struct Animation {
+    frames: Vec<usize>,
+    current: usize,
+    timer: Timer,
+}
+
 fn main() {
 
     App::new()
@@ -25,11 +35,21 @@ fn main() {
                 .with_collection::<ImageAssets>()
         )
         .add_state(GameState::Loading)
-        .add_plugins(DefaultPlugins.set(ImagePlugin::default_nearest()))
+        .add_plugins(DefaultPlugins
+            .set(ImagePlugin::default_nearest()
+            .set(WindowPlugin {
+                window: WindowDescriptor {
+                    width: 900.0,
+                    ..default()
+                },
+                ..default()
+            })))
         .add_plugin(Sprite3dPlugin)
         .add_plugin(WorldInspectorPlugin::new())
         .add_system_set( SystemSet::on_enter(GameState::Ready).with_system(spawn_sprites) )
         .add_system_set( SystemSet::on_update(GameState::Ready).with_system(animate_camera) )
+        .add_system_set( SystemSet::on_update(GameState::Ready).with_system(animate_sprites) )
+        .add_system_set( SystemSet::on_update(GameState::Ready).with_system(face_camera) )
         .run();
 
 }
@@ -37,28 +57,36 @@ fn main() {
 #[derive(Component, Deref, DerefMut)]
 struct AnimationTimer(Timer);
 
+#[derive(Component)]
+struct FaceCamera;
+
 fn spawn_sprites(
     mut commands: Commands, 
     images: Res<ImageAssets>,
     mut sprite_params: Sprite3dParams,
 ) {
-    commands.spawn(Camera3dBundle {
-        camera_3d: Camera3d {
-            clear_color: ClearColorConfig::Custom(Color::rgb(0.0, 0.0, 0.0)),
+    commands.spawn((Camera3dBundle {
+            camera: Camera {
+                hdr: true,
+                ..Default::default()
+            },
+            camera_3d: Camera3d {
+                clear_color: ClearColorConfig::Custom(Color::rgb(0.0, 0.0, 0.0)),
+                ..Default::default()
+            },
+            projection: bevy::prelude::Projection::Perspective(PerspectiveProjection {
+                fov: std::f32::consts::PI / 6.0,
+                ..Default::default()
+            }),
             ..Default::default()
         },
-        ..Default::default()
-    });
-
-    commands.spawn(PointLightBundle {
-        point_light: PointLight {
-            intensity: 1500.0,
-            shadows_enabled: true,
-            ..default()
+        BloomSettings {
+            intensity: 0.9,
+            knee: 0.5,
+            ..Default::default()
         },
-        transform: Transform::from_xyz(4.0, 8.0, 4.0),
-        ..default()
-    });
+    ));
+
 
     // ------------------ Tilemap for the floor ------------------
 
@@ -227,10 +255,85 @@ fn spawn_sprites(
         }
     }
 
+    // --------------------- add some lights ---------------------
+
+    // spawn a fire at the center of the map
+
+    commands.spawn((AtlasSprite3d {
+            atlas: images.tileset.clone(),
+            pixels_per_metre: 16.,
+            index: 30*32 + 14,
+            transform: Transform::from_xyz(2.0, 0.5, -5.5),
+            emissive: Color::rgb(1.0, 0.5, 0.0),
+            unlit: true,
+            ..default()
+        }.bundle(&mut sprite_params),
+
+        Animation {
+            frames: vec![30*32 + 14, 30*32 + 15, 30*32 + 16],
+            current: 0,
+            timer: Timer::from_seconds(0.2, TimerMode::Repeating),
+        },
+        
+        FaceCamera {}
+    ));
+
+    commands.spawn(PointLightBundle {
+        point_light: PointLight {
+            intensity: 300.0,
+            color: Color::rgb(1.0, 231./255., 221./255.),
+            shadows_enabled: true,
+            ..default()
+        },
+        transform: Transform::from_xyz(2.0, 1.8, -5.5),
+        ..default()
+    });
+
+    
+    // --------------------- characters, enemies, props ---------------------
+
+    let mut entity = |(x, y), tile_x, tile_y, height, frames| {
+        let mut timer = Timer::from_seconds(0.4, TimerMode::Repeating);
+        timer.set_elapsed(Duration::from_secs_f32(rng.gen_range(0.0..0.4)));
+
+        for i in 0usize..height {
+            let mut c = commands.spawn((AtlasSprite3d {
+                    atlas: images.tileset.clone(),
+                    pixels_per_metre: 16.,
+                    index: (tile_x + (tile_y - i) * 30) as usize,
+                    transform: Transform::from_xyz(x as f32, i as f32 + 0.499, y),
+                    ..default()
+                }.bundle(&mut sprite_params),
+                FaceCamera {},
+            ));
+            
+            if frames > 1 {
+                c.insert(Animation {
+                    frames: (0..frames).map(|j| j + tile_x + (tile_y - i) * 30 as usize).collect(),
+                    current: 0,
+                    timer: timer.clone(),
+                });
+            }
+        }
+    };
+
+    // 3 humans
+    entity((4.5, -4.0), 6, 27, 2, 2);
+    entity((1.5, -7.0), 2, 27, 2, 2);
+    entity((0.5, 2.0),  4, 27, 2, 2);
+
+    // 4 containers
+    entity((3.5, 1.0),  0, 19, 1, 1);
+    entity((4.0, 4.0),  1, 19, 1, 1);
+    entity((0.0, 5.0),  4, 19, 1, 1);
+    entity((-4.0, 5.5),  5, 19, 1, 1);
+    entity((-0.5, -8.5),  2, 19, 1, 1);
+
+
 }
 
-const CAM_DISTANCE: f32 = 17.0;
-const CAM_HEIGHT: f32 = 6.0;
+const CAM_DISTANCE: f32 = 21.0;
+const CAM_HEIGHT: f32 = 7.0;
 const CAM_SPEED: f32 = 0.1;
 // const CAM_SPEED: f32 = 0.5;
 
@@ -247,3 +350,29 @@ fn animate_camera(
 }
 
 
+fn animate_sprites(
+    time: Res<Time>,
+    mut query: Query<(&mut Animation, &mut AtlasSprite3dComponent)>,
+) {
+    for (mut animation, mut sprite) in query.iter_mut() {
+        animation.timer.tick(time.delta());
+        if animation.timer.just_finished() {
+            sprite.index = animation.frames[animation.current];
+            animation.current += 1;
+            animation.current %= animation.frames.len();
+        }
+    }
+}
+
+fn face_camera(
+    cam_query: Query<&Transform, With<Camera>>,
+    mut query: Query<&mut Transform, (With<FaceCamera>, Without<Camera>)>,
+) {
+    let cam_transform = cam_query.single();
+    for mut transform in query.iter_mut() {
+        let mut delta = cam_transform.translation - transform.translation;
+        delta.y = 0.0;
+        delta += transform.translation;
+        transform.look_at(delta, Vec3::Y);
+    }
+}
