@@ -1,48 +1,82 @@
-use bevy::prelude::*;
-use bevy_sprite3d::*;
-use bevy_asset_loader::prelude::*;
-use bevy::utils::Duration;
-use bevy::core_pipeline::clear_color::ClearColorConfig;
+use bevy::{prelude::*, window::WindowResolution};
+use bevy::asset::LoadState;
 use bevy::core_pipeline::bloom::BloomSettings;
+use bevy::core_pipeline::clear_color::ClearColorConfig;
+use bevy::core_pipeline::tonemapping::Tonemapping;
 use bevy::render::camera::PerspectiveProjection;
+use bevy::utils::Duration;
+
+use bevy_sprite3d::*;
+
 use rand::{prelude::SliceRandom, Rng};
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-enum GameState { Loading, Ready }
+#[derive(States, Hash, Clone, PartialEq, Eq, Debug, Default)]
+enum GameState { #[default] Loading, Ready }
 
-#[derive(AssetCollection, Resource)]
+// #[derive(AssetCollection, Resource)]
+// struct ImageAssets {
+//     #[asset(texture_atlas(tile_size_x = 16., tile_size_y = 16., 
+//             columns = 30, rows = 35, padding_x = 10., padding_y = 10., 
+//             offset_x = 5., offset_y = 5.))]
+//     #[asset(path = "dungeon/art/tileset_padded.png")]
+//     tileset: Handle<TextureAtlas>,
+// }
+#[derive(Resource, Default)]
 struct ImageAssets {
-    #[asset(texture_atlas(tile_size_x = 16., tile_size_y = 16., 
-            columns = 30, rows = 35, padding_x = 10., padding_y = 10., 
-            offset_x = 5., offset_y = 5.))]
-    #[asset(path = "dungeon/art/tileset_padded.png")]
+    image: Handle<Image>,
     tileset: Handle<TextureAtlas>,
 }
+
 
 fn main() {
 
     App::new()
-        .add_loading_state(
-            LoadingState::new(GameState::Loading)
-                .continue_to_state(GameState::Ready)
-                .with_collection::<ImageAssets>()
-        )
-        .add_state(GameState::Loading)
         .add_plugins(DefaultPlugins
             .set(ImagePlugin::default_nearest())
             .set(WindowPlugin {
-                window: WindowDescriptor {
-                    width: 1080.0, height: 1080.0 * 3./4., ..default()
-                }, ..default()
+                primary_window: Some( Window{
+                    resolution: WindowResolution::new(1080.0, 1080.0 * 3./4.),
+                    ..default()
+                }), ..default()
             }))
         .add_plugin(Sprite3dPlugin)
-        .add_system_set( SystemSet::on_enter(GameState::Ready).with_system(setup) )
-        .add_system_set( SystemSet::on_enter(GameState::Ready).with_system(spawn_sprites) )
-        .add_system_set( SystemSet::on_update(GameState::Ready).with_system(animate_camera) )
-        .add_system_set( SystemSet::on_update(GameState::Ready).with_system(animate_sprites) )
-        .add_system_set( SystemSet::on_update(GameState::Ready).with_system(face_camera) )
-        .run();
+        .add_state::<GameState>()
+        
+        // initially load assets
+        .add_startup_system(|asset_server:         Res<AssetServer>,
+                             mut assets:           ResMut<ImageAssets>,
+                             mut texture_atlases:  ResMut<Assets<TextureAtlas>>| {
 
+            assets.image = asset_server.load("dungeon/art/tileset_padded.png");
+
+            assets.tileset = texture_atlases.add(
+                TextureAtlas::from_grid(assets.image.clone(), 
+                                        Vec2::new(16.0, 16.0), 
+                                        30, 
+                                        35, 
+                                        Some(Vec2::new(10., 10.)), 
+                                        Some(Vec2::new(5., 5.)))
+            );
+        })
+
+        // every frame check if assets are loaded. Once they are, we can proceed with setup.
+        .add_system((|asset_server   : Res<AssetServer>,
+                     assets         : Res<ImageAssets>,
+                     mut next_state : ResMut<NextState<GameState>>| {
+
+            if asset_server.get_load_state(assets.image.clone()) == LoadState::Loaded { 
+                next_state.set(GameState::Ready);
+            }
+        }).in_set(OnUpdate(GameState::Loading)))
+
+        .add_system( setup.in_schedule(OnEnter(GameState::Ready)) )
+        .add_system( spawn_sprites.in_schedule(OnEnter(GameState::Ready)) )
+        .add_system( animate_camera.in_set(OnUpdate(GameState::Ready)) )
+        .add_system( animate_sprites.in_set(OnUpdate(GameState::Ready)) )
+        .add_system( face_camera.in_set(OnUpdate(GameState::Ready)) )
+        .insert_resource(ImageAssets::default())
+        .run();
+        
 }
 
 #[derive(Component)]
@@ -69,7 +103,7 @@ fn setup(
     });
     // sphere
     commands.spawn(PbrBundle {
-        mesh: meshes.add(Mesh::from(shape::Icosphere { radius: 0.6, subdivisions: 20 })),
+        mesh: meshes.add(shape::Icosphere { radius: 0.6, subdivisions: 20 }.try_into().unwrap()),
         material: materials.add(Color::WHITE.into()),
         transform: Transform::from_xyz(-0.9, 0.5, -4.2),
         ..default()
@@ -77,23 +111,24 @@ fn setup(
 
     // camera
     commands.spawn((Camera3dBundle {
-            camera: Camera { hdr: true, ..Default::default() },
+            camera: Camera { hdr: true, ..default() },
             camera_3d: Camera3d {
-                clear_color: ClearColorConfig::Custom(Color::rgb(0.0, 0.0, 0.0)),
-                ..Default::default()
+                clear_color: ClearColorConfig::Custom(Color::rgb(1.0, 1.0, 1.0) * 0.0),
+                ..default()
             },
             projection: bevy::prelude::Projection::Perspective(PerspectiveProjection {
                 fov: std::f32::consts::PI / 6.0,
-                ..Default::default()
+                ..default()
             }),
-            ..Default::default()
+            ..default()
         },
-        BloomSettings { // just a complete guess at configuration settings.
-            intensity: 0.9,
-            knee: 0.5,
-            ..Default::default()
+        BloomSettings {
+            intensity: 0.3,
+            ..default()
         },
     ));
+
+    commands.spawn(Tonemapping::AcesFitted);
 }
 
 fn spawn_sprites(
@@ -278,7 +313,7 @@ fn spawn_sprites(
                     atlas: images.tileset.clone(),
                     pixels_per_metre: 16.,
                     index: (tile_x + (tile_y - i) * 30) as usize,
-                    transform: Transform::from_xyz(x as f32, i as f32 + 0.499, y),
+                    transform: Transform::from_xyz(x as f32, i as f32 + 0.498, y),
                     ..default()
                 }.bundle(&mut sprite_params),
                 FaceCamera {},
@@ -315,7 +350,7 @@ fn spawn_sprites(
             pixels_per_metre: 16.,
             index: 30*32 + 14,
             transform: Transform::from_xyz(2.0, 0.5, -5.5),
-            emissive: Color::rgb(1.0, 0.5, 0.0),
+            emissive: Color::rgb(1.0, 0.5, 0.0) * 10.0,
             unlit: true,
             ..default()
         }.bundle(&mut sprite_params),
@@ -367,20 +402,26 @@ fn spawn_sprites(
 }
 
 // parameters for how the camera orbits the area
-const CAM_DISTANCE: f32 = 21.0;
-const CAM_HEIGHT: f32 = 7.0;
-const CAM_SPEED: f32 = 0.1;
+const CAM_DISTANCE: f32 = 25.0;
+const CAM_HEIGHT: f32 = 16.0;
+const CAM_SPEED: f32 = -0.1;
+
+// camera will always orbit 0,0,0, but can look somewhere slightly different
+const CAM_TARGET_X: f32 = 2.0;
+const CAM_TARGET_Z: f32 = -5.5;
+
+const CAM_T_OFFSET: f32 = -0.4;
 
 fn animate_camera(
     time: Res<Time>,
     mut query: Query<&mut Transform, With<Camera>>,
 ) {
     let mut transform = query.single_mut();
-    let time = std::f32::consts::PI - time.elapsed_seconds() * CAM_SPEED;
+    let time = std::f32::consts::PI - time.elapsed_seconds() * CAM_SPEED + CAM_T_OFFSET;
     transform.translation.x = time.sin() * CAM_DISTANCE;
     transform.translation.y = CAM_HEIGHT;
     transform.translation.z = time.cos() * CAM_DISTANCE;
-    transform.look_at(Vec3::ZERO, Vec3::Y);
+    transform.look_at(Vec3::new(CAM_TARGET_X, 0.0, CAM_TARGET_Z), Vec3::Y);
 }
 
 

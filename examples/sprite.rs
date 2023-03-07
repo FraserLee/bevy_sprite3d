@@ -1,39 +1,48 @@
 use bevy::prelude::*;
+use bevy::asset::LoadState;
 use bevy_sprite3d::*;
-use bevy_asset_loader::prelude::*;
 
+#[derive(States, Hash, Clone, PartialEq, Eq, Debug, Default)]
+enum GameState { #[default] Loading, Ready }
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-enum GameState { Loading, Ready }
-
-#[derive(AssetCollection, Resource)]
-struct ImageAssets {
-    #[asset(path = "icon.png")]
-    icon: Handle<Image>,
-}
+#[derive(Resource, Default)]
+struct Assets(Handle<Image>);
 
 fn main() {
 
     App::new()
-        .add_loading_state(
-            LoadingState::new(GameState::Loading)
-                .continue_to_state(GameState::Ready)
-                .with_collection::<ImageAssets>()
-        )
-        .add_state(GameState::Loading)
         .add_plugins(DefaultPlugins)
         .add_plugin(Sprite3dPlugin)
-        .add_system_set( SystemSet::on_enter(GameState::Ready).with_system(setup) )
+        .add_state::<GameState>()
+
+        // initially load assets
+        .add_startup_system(|asset_server: Res<AssetServer>, mut assets: ResMut<Assets>| { 
+            assets.0 = asset_server.load("icon.png"); 
+        })
+
+        // run `setup` every frame while loading. Once it detects the right
+        // conditions it'll switch to the next state.
+        .add_system(setup.in_set(OnUpdate(GameState::Loading)))
+
+        .insert_resource(Assets::default())
         .run();
 
 }
 
-
 fn setup(
-    mut commands: Commands, 
-    images: Res<ImageAssets>,
-    mut sprite_params: Sprite3dParams
+    asset_server      : Res<AssetServer>,
+    assets            : Res<Assets>,
+    mut commands      : Commands,
+    mut next_state    : ResMut<NextState<GameState>>,
+    mut sprite_params : Sprite3dParams
 ) {
+
+    // poll every frame to check if assets are loaded. Once they are, we can proceed with setup.
+    if asset_server.get_load_state(assets.0.clone()) != LoadState::Loaded { return; }
+
+    next_state.set(GameState::Ready);
+
+    // -----------------------------------------------------------------------
 
     commands.spawn(Camera3dBundle::default())
             .insert(Transform::from_xyz(0., 0., 5.));
@@ -41,7 +50,7 @@ fn setup(
     // ----------------------- Spawn a 3D sprite -----------------------------
 
     commands.spawn(Sprite3d {
-            image: images.icon.clone(),
+            image: assets.0.clone(),
 
             pixels_per_metre: 400.,
 

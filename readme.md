@@ -22,7 +22,7 @@ Example using `bevy_sprite3d`:
 
 [`examples/dungeon.rs`](./examples/dungeon.rs) for a more complicated scene. Try
 this one with `cargo run --example dungeon`.
-[![](http://img.youtube.com/vi/vnKjkvoHnPY/0.jpg)](http://www.youtube.com/watch?v=vnKjkvoHnPY)
+[![](http://img.youtube.com/vi/T9eXYOZ4OjI/0.jpg)](http://www.youtube.com/watch?v=T9eXYOZ4OjI)
 
 Some more examples. These don't use bevy, but demonstrate the effect style:
 
@@ -85,24 +85,24 @@ fn setup(
 ```
 
 One small complication: your image assets should be loaded *prior* to spawning,
-as `bevy_sprite3d` uses some properties of the image (such as size and aspect ratio)
-in constructing the 3d mesh.
+as `bevy_sprite3d` uses some properties of the image (such as size and aspect
+ratio) in constructing the 3d mesh.
 
-To that end, the examples use
+To that end, I'd recommend using
 [`bevy_asset_loader`](https://github.com/NiklasEi/bevy_asset_loader) for
-simplicity. This is far from the only way to do it, but it provides a nice
-template to get started.
+simplicity. Examples are provided both with and without it.
 
 ## Versioning
 
-| `bevy` version | `bevy_sprite3d` version |
-| -------------- | ----------------------- |
-| 0.9            | 2.3                     |
-| 0.9            | 2.2                     |
-| 0.9            | 2.1                     |
-| 0.8            | 2.0                     |
-| 0.8            | 1.1                     |
-| 0.7            | 1.0                     |
+| `bevy_sprite3d` version | `bevy` version |
+| ----------------------- | -------------- |
+| 2.4                     | 0.10           |
+| 2.3                     | 0.9            |
+| 2.2                     | 0.9            |
+| 2.1                     | 0.9            |
+| 2.0                     | 0.8            |
+| 1.1                     | 0.8            |
+| 1.0                     | 0.7            |
 
 
 

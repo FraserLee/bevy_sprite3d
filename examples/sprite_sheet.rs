@@ -1,44 +1,64 @@
 use bevy::prelude::*;
+use bevy::asset::LoadState;
 use bevy_sprite3d::*;
-use bevy_asset_loader::prelude::*;
 
+#[derive(States, Hash, Clone, PartialEq, Eq, Debug, Default)]
+enum GameState { #[default] Loading, Ready }
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-enum GameState { Loading, Ready }
-
-#[derive(AssetCollection, Resource)]
+#[derive(Resource, Default)]
 struct ImageAssets {
-    #[asset(texture_atlas(tile_size_x = 24., tile_size_y = 24.))]
-    #[asset(texture_atlas(columns = 7, rows = 1))]
-    #[asset(path = "gabe-idle-run.png")]
-    run: Handle<TextureAtlas>,
-}
-
-fn main() {
-
-    App::new()
-        .add_loading_state(
-            LoadingState::new(GameState::Loading)
-                .continue_to_state(GameState::Ready)
-                .with_collection::<ImageAssets>()
-        )
-        .add_state(GameState::Loading)
-        .add_plugins(DefaultPlugins.set(ImagePlugin::default_nearest()))
-        .add_plugin(Sprite3dPlugin)
-        .add_system_set( SystemSet::on_enter(GameState::Ready).with_system(setup) )
-        .add_system_set( SystemSet::on_update(GameState::Ready).with_system(animate_sprite) )
-        .run();
-
+    image: Handle<Image>,        // the `image` field here is only used to query the load state, lots of the 
+    atlas: Handle<TextureAtlas>, // code in this file disappears if something like bevy_asset_loader is used.
 }
 
 #[derive(Component, Deref, DerefMut)]
 struct AnimationTimer(Timer);
 
+fn main() {
+
+    App::new()
+        .add_plugins(DefaultPlugins.set(ImagePlugin::default_nearest()))
+        .add_plugin(Sprite3dPlugin)
+        .add_state::<GameState>()
+
+        // initially load assets
+        .add_startup_system(|asset_server:         Res<AssetServer>,
+                             mut assets:           ResMut<ImageAssets>,
+                             mut texture_atlases:  ResMut<Assets<TextureAtlas>>| {
+
+            assets.image = asset_server.load("gabe-idle-run.png");
+
+            assets.atlas = texture_atlases.add(
+                TextureAtlas::from_grid(assets.image.clone(), Vec2::new(24.0, 24.0), 7, 1, None, None)
+            );
+        })
+
+        // run `setup` every frame while loading. Once it detects the right
+        // conditions it'll switch to the next state.
+        .add_system(setup.in_set(OnUpdate(GameState::Loading)))
+
+        // every frame, animate the sprite
+        .add_system(animate_sprite.in_set(OnUpdate(GameState::Ready)))
+        
+        .insert_resource(ImageAssets::default())
+        .run();
+
+}
+
 fn setup(
-    mut commands: Commands, 
-    images: Res<ImageAssets>,
-    mut sprite_params: Sprite3dParams
+    asset_server      : Res<AssetServer>,
+    assets            : Res<ImageAssets>,
+    mut commands      : Commands,
+    mut next_state    : ResMut<NextState<GameState>>,
+    mut sprite_params : Sprite3dParams
 ) {
+
+    // poll every frame to check if assets are loaded. Once they are, we can proceed with setup.
+    if asset_server.get_load_state(assets.image.clone()) != LoadState::Loaded { return; }
+
+    next_state.set(GameState::Ready);
+
+    // -----------------------------------------------------------------------
 
     commands.spawn(Camera3dBundle::default())
             .insert(Transform::from_xyz(0., 0., 5.));
@@ -46,7 +66,7 @@ fn setup(
     // -------------------- Spawn a 3D atlas sprite --------------------------
 
     commands.spawn(AtlasSprite3d {
-            atlas: images.run.clone(),
+            atlas: assets.atlas.clone(),
 
             pixels_per_metre: 32.,
             partial_alpha: true,

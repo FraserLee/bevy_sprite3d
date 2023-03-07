@@ -1,6 +1,6 @@
 [package]
 name = "bevy_sprite3d"
-version = "2.3.1"
+version = "2.4.0"
 edition = "2021"
 
 description = "Bevy Plugin to allow using 2d sprites in a 3d scene."
@@ -10,11 +10,7 @@ repository = "https://github.com/FraserLee/bevy_sprite3d"
 keywords = ["gamedev", "bevy", "sprite", "3d"]
 
 [dependencies]
-bevy = "0.9"
+bevy = "0.10"
 
 [dev-dependencies]
 rand = "0.8"
-
-# todo: swap back to a set version once the next one is published
-# bevy_asset_loader = { version = "0.14", features = ["2d"] }
-bevy_asset_loader = { git = "https://github.com/NiklasEi/bevy_asset_loader", rev = "1c093ec", features = ["2d"] }

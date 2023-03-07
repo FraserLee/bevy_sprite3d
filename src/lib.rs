@@ -7,7 +7,7 @@ pub struct Sprite3dPlugin;
 impl Plugin for Sprite3dPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Sprite3dRes>();
-        app.add_system_to_stage(CoreStage::PostUpdate, sprite3d_system);
+        app.add_system(sprite3d_system.in_base_set(CoreSet::PostUpdate));
     }
 }
 
