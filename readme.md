@@ -20,19 +20,24 @@ Example using `bevy_sprite3d`:
 
 ![chaos](assets/example.gif)
 
-[`examples/dungeon.rs`](./examples/dungeon.rs) for a more complicated scene. Try
+
+A more complicated scene: [`examples/dungeon.rs`](./examples/dungeon.rs). Try
 this one with `cargo run --example dungeon`.
+
 [![](http://img.youtube.com/vi/T9eXYOZ4OjI/0.jpg)](http://www.youtube.com/watch?v=T9eXYOZ4OjI)
+
 
 Some more examples. These don't use bevy, but demonstrate the effect style:
 
 ![the last night](https://cdn.cloudflare.steamstatic.com/steam/apps/612400/extras/TLN_Crowd_01_compressed.png)
+
 ![the last night](https://cdn.cloudflare.steamstatic.com/steam/apps/612400/extras/TLN_Shootout_01_compressed.png)
+
 ![hollow knight](https://imgur.com/jVWzh4i.png)
 
 # Usage
 
-Check out the [examples](./examples) for more details. TLDR: initialize the plugin with
+Check out the [examples](./examples) for details. Tl;dr initialize the plugin with
 ```rust
 app.add_plugin(Sprite3dPlugin)
 ```
