@@ -7,7 +7,7 @@ pub struct Sprite3dPlugin;
 impl Plugin for Sprite3dPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Sprite3dRes>();
-        app.add_system(sprite3d_system.in_base_set(CoreSet::PostUpdate));
+        app.add_systems(PostUpdate, sprite3d_system);
     }
 }
 
@@ -109,7 +109,7 @@ fn quad(w: f32, h: f32, pivot: Option<Vec2>, double_sided: bool) -> Mesh {
                                                      [0.0, 1.0], [1.0, 1.0], [0.0, 0.0], [1.0, 0.0]]);
 
     mesh.set_indices(Some(Indices::U32(
-        if double_sided { vec![0, 1, 2, 1, 3, 2, 5, 4, 6, 7, 5, 6] } 
+        if double_sided { vec![0, 1, 2, 1, 3, 2, 5, 4, 6, 7, 5, 6] }
         else {            vec![0, 1, 2, 1, 3, 2] }
     )));
 
@@ -124,7 +124,7 @@ fn material(image: Handle<Image>, partial_alpha: bool, unlit: bool, emissive: Co
     StandardMaterial {
         base_color_texture: Some(image),
         cull_mode: Some(Face::Back),
-        alpha_mode: if partial_alpha { AlphaMode::Blend } 
+        alpha_mode: if partial_alpha { AlphaMode::Blend }
                     else { AlphaMode::Mask(0.5) },
         unlit,
         perceptual_roughness: 0.5,
@@ -143,17 +143,17 @@ fn material(image: Handle<Image>, partial_alpha: bool, unlit: bool, emissive: Co
 /// that can be spawned into the world.
 pub struct Sprite3d {
     /// the sprite's transform
-    pub transform: Transform, 
+    pub transform: Transform,
 
     /// the sprite image. See `readme.md` for examples.
-    pub image: Handle<Image>, 
+    pub image: Handle<Image>,
 
     // TODO: ability to specify exact size, with None scaled by image's ratio and other.
 
     /// the number of pixels per metre of the sprite, assuming a `Transform::scale` of 1.0.
-    pub pixels_per_metre: f32, 
+    pub pixels_per_metre: f32,
 
-    /// The sprite's pivot. eg. the point specified by the sprite's 
+    /// The sprite's pivot. eg. the point specified by the sprite's
     /// transform, around which a rotation will be performed.
     ///
     /// - pivot = None will have a center pivot
@@ -162,20 +162,20 @@ pub struct Sprite3d {
     pub pivot: Option<Vec2>,
 
     /// Whether the sprite should support partial alpha.
-    /// 
-    /// - `false` (default) only allows fully opaque or fully transparent pixels 
+    ///
+    /// - `false` (default) only allows fully opaque or fully transparent pixels
     ///   (cutoff at `0.5`).
-    /// - `true` allows partially transparent pixels 
-    ///   (slightly more expensive, so disabled when not needed).    
-    pub partial_alpha: bool, 
-                             
-                             
+    /// - `true` allows partially transparent pixels
+    ///   (slightly more expensive, so disabled when not needed).
+    pub partial_alpha: bool,
+
+
     /// Whether the sprite should be rendered as unlit.
     /// `false` (default) allows for lighting.
-    pub unlit: bool, 
+    pub unlit: bool,
 
-    /// Whether the sprite should be rendered as double-sided. 
-    /// `true` (default) adds a second set of indices, describing the same tris 
+    /// Whether the sprite should be rendered as double-sided.
+    /// `true` (default) adds a second set of indices, describing the same tris
     /// in reverse order.
     pub double_sided: bool,
 
@@ -184,7 +184,7 @@ pub struct Sprite3d {
     pub emissive: Color,
 }
 
-impl Default for Sprite3d {    
+impl Default for Sprite3d {
     fn default() -> Self {
         Self {
             transform: Default::default(),
@@ -202,12 +202,11 @@ impl Default for Sprite3d {
 
 // just a marker for queries at the moment, could be expanded later if needed.
 #[derive(Component)]
-pub struct Sprite3dComponent { } 
+pub struct Sprite3dComponent { }
 
 #[derive(Bundle)]
 pub struct Sprite3dBundle {
     pub params: Sprite3dComponent,
-    #[bundle]
     pub pbr: PbrBundle,
 }
 
@@ -238,7 +237,7 @@ impl Sprite3d {
 
                     // if we have a mesh in the cache, use it.
                     // (greatly reduces number of unique meshes for tilemaps, etc.)
-                    if let Some(mesh) = params.sr.mesh_cache.get(&mesh_key) { mesh.clone() } 
+                    if let Some(mesh) = params.sr.mesh_cache.get(&mesh_key) { mesh.clone() }
                     else { // otherwise, create a new mesh and cache it.
                         let mesh = params.meshes.add(quad( w, h, self.pivot, self.double_sided ));
                         params.sr.mesh_cache.insert(mesh_key, mesh.clone());
@@ -354,7 +353,6 @@ pub struct AtlasSprite3dComponent {
 #[derive(Bundle)]
 pub struct AtlasSprite3dBundle {
     pub params: AtlasSprite3dComponent,
-    #[bundle]
     pub pbr: PbrBundle,
 }
 
@@ -440,7 +438,7 @@ impl AtlasSprite3d {
                         unlit: self.unlit,
                         emissive: reduce_colour(self.emissive),
                     };
-                    if let Some(material) = params.sr.material_cache.get(&mat_key) { material.clone() } 
+                    if let Some(material) = params.sr.material_cache.get(&mat_key) { material.clone() }
                     else {
                         let material = params.materials.add(material(atlas.texture.clone(), self.partial_alpha, self.unlit, self.emissive));
                         params.sr.material_cache.insert(mat_key, material.clone());

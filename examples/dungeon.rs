@@ -15,8 +15,8 @@ enum GameState { #[default] Loading, Ready }
 
 // #[derive(AssetCollection, Resource)]
 // struct ImageAssets {
-//     #[asset(texture_atlas(tile_size_x = 16., tile_size_y = 16., 
-//             columns = 30, rows = 35, padding_x = 10., padding_y = 10., 
+//     #[asset(texture_atlas(tile_size_x = 16., tile_size_y = 16.,
+//             columns = 30, rows = 35, padding_x = 10., padding_y = 10.,
 //             offset_x = 5., offset_y = 5.))]
 //     #[asset(path = "dungeon/art/tileset_padded.png")]
 //     tileset: Handle<TextureAtlas>,
@@ -39,44 +39,44 @@ fn main() {
                     ..default()
                 }), ..default()
             }))
-        .add_plugin(Sprite3dPlugin)
+        .add_plugins(Sprite3dPlugin)
         .add_state::<GameState>()
-        
+
         // initially load assets
-        .add_startup_system(|asset_server:         Res<AssetServer>,
-                             mut assets:           ResMut<ImageAssets>,
-                             mut texture_atlases:  ResMut<Assets<TextureAtlas>>| {
+        .add_systems(Startup, |asset_server:         Res<AssetServer>,
+                               mut assets:           ResMut<ImageAssets>,
+                               mut texture_atlases:  ResMut<Assets<TextureAtlas>>| {
 
             assets.image = asset_server.load("dungeon/art/tileset_padded.png");
 
             assets.tileset = texture_atlases.add(
-                TextureAtlas::from_grid(assets.image.clone(), 
-                                        Vec2::new(16.0, 16.0), 
-                                        30, 
-                                        35, 
-                                        Some(Vec2::new(10., 10.)), 
+                TextureAtlas::from_grid(assets.image.clone(),
+                                        Vec2::new(16.0, 16.0),
+                                        30,
+                                        35,
+                                        Some(Vec2::new(10., 10.)),
                                         Some(Vec2::new(5., 5.)))
             );
         })
 
         // every frame check if assets are loaded. Once they are, we can proceed with setup.
-        .add_system((|asset_server   : Res<AssetServer>,
-                     assets         : Res<ImageAssets>,
-                     mut next_state : ResMut<NextState<GameState>>| {
+        .add_systems( Update, (
+                       |asset_server   : Res<AssetServer>,
+                        assets         : Res<ImageAssets>,
+                        mut next_state : ResMut<NextState<GameState>>| {
 
-            if asset_server.get_load_state(assets.image.clone()) == LoadState::Loaded { 
+            if asset_server.get_load_state(assets.image.clone()) == LoadState::Loaded {
                 next_state.set(GameState::Ready);
             }
-        }).in_set(OnUpdate(GameState::Loading)))
-
-        .add_system( setup.in_schedule(OnEnter(GameState::Ready)) )
-        .add_system( spawn_sprites.in_schedule(OnEnter(GameState::Ready)) )
-        .add_system( animate_camera.in_set(OnUpdate(GameState::Ready)) )
-        .add_system( animate_sprites.in_set(OnUpdate(GameState::Ready)) )
-        .add_system( face_camera.in_set(OnUpdate(GameState::Ready)) )
+        }).run_if(in_state(GameState::Loading)) )
+        .add_systems( OnEnter(GameState::Ready), setup )
+        .add_systems( OnEnter(GameState::Ready), spawn_sprites )
+        .add_systems( Update, animate_camera.run_if(in_state(GameState::Ready)) )
+        .add_systems( Update, animate_sprites.run_if(in_state(GameState::Ready)) )
+        .add_systems( Update, face_camera.run_if(in_state(GameState::Ready)) )
         .insert_resource(ImageAssets::default())
         .run();
-        
+
 }
 
 #[derive(Component)]
@@ -132,7 +132,7 @@ fn setup(
 }
 
 fn spawn_sprites(
-    mut commands: Commands, 
+    mut commands: Commands,
     images: Res<ImageAssets>,
     mut sprite_params: Sprite3dParams,
 ) {
@@ -197,7 +197,7 @@ fn spawn_sprites(
     }
 
     // might be nice to add built-in support for sprite-merging for tilemaps...
-    // though since all the meshes and materials are already cached and reused, 
+    // though since all the meshes and materials are already cached and reused,
     // I wonder how much of a speedup that'd actually be. Food for thought.
 
     for y in 0..map.len() {
@@ -318,7 +318,7 @@ fn spawn_sprites(
                 }.bundle(&mut sprite_params),
                 FaceCamera {},
             ));
-            
+
             if frames > 1 {
                 c.insert(Animation {
                     frames: (0..frames).map(|j| j + tile_x + (tile_y - i) * 30 as usize).collect(),
@@ -360,7 +360,7 @@ fn spawn_sprites(
             current: 0,
             timer: Timer::from_seconds(0.2, TimerMode::Repeating),
         },
-        
+
         FaceCamera {}
     ));
     commands.spawn(PointLightBundle {

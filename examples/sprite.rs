@@ -12,17 +12,17 @@ fn main() {
 
     App::new()
         .add_plugins(DefaultPlugins)
-        .add_plugin(Sprite3dPlugin)
+        .add_plugins(Sprite3dPlugin)
         .add_state::<GameState>()
 
         // initially load assets
-        .add_startup_system(|asset_server: Res<AssetServer>, mut assets: ResMut<Assets>| { 
-            assets.0 = asset_server.load("icon.png"); 
-        })
+        .add_systems( Startup, |asset_server: Res<AssetServer>, mut assets: ResMut<Assets>| {
+            assets.0 = asset_server.load("icon.png");
+        } )
 
         // run `setup` every frame while loading. Once it detects the right
         // conditions it'll switch to the next state.
-        .add_system(setup.in_set(OnUpdate(GameState::Loading)))
+        .add_systems( Update, setup.run_if(in_state(GameState::Loading)) )
 
         .insert_resource(Assets::default())
         .run();

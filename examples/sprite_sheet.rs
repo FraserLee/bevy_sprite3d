@@ -7,7 +7,7 @@ enum GameState { #[default] Loading, Ready }
 
 #[derive(Resource, Default)]
 struct ImageAssets {
-    image: Handle<Image>,        // the `image` field here is only used to query the load state, lots of the 
+    image: Handle<Image>,        // the `image` field here is only used to query the load state, lots of the
     atlas: Handle<TextureAtlas>, // code in this file disappears if something like bevy_asset_loader is used.
 }
 
@@ -18,13 +18,13 @@ fn main() {
 
     App::new()
         .add_plugins(DefaultPlugins.set(ImagePlugin::default_nearest()))
-        .add_plugin(Sprite3dPlugin)
+        .add_plugins(Sprite3dPlugin)
         .add_state::<GameState>()
 
         // initially load assets
-        .add_startup_system(|asset_server:         Res<AssetServer>,
-                             mut assets:           ResMut<ImageAssets>,
-                             mut texture_atlases:  ResMut<Assets<TextureAtlas>>| {
+        .add_systems(Startup, |asset_server:         Res<AssetServer>,
+                               mut assets:           ResMut<ImageAssets>,
+                               mut texture_atlases:  ResMut<Assets<TextureAtlas>>| {
 
             assets.image = asset_server.load("gabe-idle-run.png");
 
@@ -35,11 +35,11 @@ fn main() {
 
         // run `setup` every frame while loading. Once it detects the right
         // conditions it'll switch to the next state.
-        .add_system(setup.in_set(OnUpdate(GameState::Loading)))
+        .add_systems(Update, setup.run_if(in_state(GameState::Loading)))
 
         // every frame, animate the sprite
-        .add_system(animate_sprite.in_set(OnUpdate(GameState::Ready)))
-        
+        .add_systems(Update, animate_sprite.run_if(in_state(GameState::Ready)))
+
         .insert_resource(ImageAssets::default())
         .run();
 
