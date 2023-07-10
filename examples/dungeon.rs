@@ -5,6 +5,8 @@ use bevy::core_pipeline::clear_color::ClearColorConfig;
 use bevy::core_pipeline::tonemapping::Tonemapping;
 use bevy::render::camera::PerspectiveProjection;
 use bevy::utils::Duration;
+use bevy::pbr::ScreenSpaceAmbientOcclusionBundle;
+use bevy::core_pipeline::experimental::taa::TemporalAntiAliasBundle;
 
 use bevy_sprite3d::*;
 
@@ -39,6 +41,7 @@ fn main() {
                     ..default()
                 }), ..default()
             }))
+        .insert_resource(Msaa::Off)
         .add_plugins(Sprite3dPlugin)
         .add_state::<GameState>()
 
@@ -126,7 +129,9 @@ fn setup(
             intensity: 0.3,
             ..default()
         },
-    ));
+    ))
+    .insert(ScreenSpaceAmbientOcclusionBundle::default())
+    .insert(TemporalAntiAliasBundle::default());
 
     commands.spawn(Tonemapping::AcesFitted);
 }
