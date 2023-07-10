@@ -24,7 +24,8 @@ Example using `bevy_sprite3d`:
 A more complicated scene: [`examples/dungeon.rs`](./examples/dungeon.rs). Try
 this one with `cargo run --example dungeon`.
 
-[![](http://img.youtube.com/vi/T9eXYOZ4OjI/0.jpg)](http://www.youtube.com/watch?v=T9eXYOZ4OjI)
+https://github.com/FraserLee/bevy_sprite3d/assets/30442265/1821b13c-9770-4f4e-a889-f67e06a3cda6
+
 
 
 Some more examples. These don't use bevy, but demonstrate the effect style:
@@ -101,6 +102,7 @@ simplicity. Examples are provided both with and without it.
 
 | `bevy_sprite3d` version | `bevy` version |
 | ----------------------- | -------------- |
+| 2.5                     | 0.11           |
 | 2.4                     | 0.10           |
 | 2.3                     | 0.9            |
 | 2.2                     | 0.9            |
