@@ -178,8 +178,8 @@ pub struct Sprite3d {
     pub image: Handle<Image>,
 
     // TODO: ability to specify exact size, with None scaled by image's ratio and other.
-    /// the number of pixels per metre of the sprite, assuming a `Transform::scale` of 1.0.
-    pub pixels_per_metre: f32,
+    /// the number of pixels per meter of the sprite, assuming a `Transform::scale` of 1.0.
+    pub pixels_per_meter: f32,
 
     /// The sprite's pivot. eg. the point specified by the sprite's
     /// transform, around which a rotation will be performed.
@@ -216,7 +216,7 @@ impl Default for Sprite3d {
         Self {
             transform: Default::default(),
             image: Default::default(),
-            pixels_per_metre: 100.,
+            pixels_per_meter: 100.,
             pivot: None,
             partial_alpha: false,
             unlit: false,
@@ -247,8 +247,8 @@ impl Sprite3d {
             .texture_descriptor
             .size;
         // w & h are the world-space size of the sprite.
-        let w = (image_size.width as f32) / self.pixels_per_metre;
-        let h = (image_size.height as f32) / self.pixels_per_metre;
+        let w = (image_size.width as f32) / self.pixels_per_meter;
+        let h = (image_size.height as f32) / self.pixels_per_meter;
 
         return Sprite3dBundle {
             params: Sprite3dComponent {},
@@ -325,8 +325,8 @@ pub struct AtlasSprite3d {
     /// the sprite's index in the atlas.
     pub index: usize,
 
-    /// the number of pixels per metre of the sprite, assuming a `Transform::scale` of 1.0.
-    pub pixels_per_metre: f32,
+    /// the number of pixels per meter of the sprite, assuming a `Transform::scale` of 1.0.
+    pub pixels_per_meter: f32,
 
     /// The sprite's pivot. eg. the point specified by the sprite's
     /// transform, around which a rotation will be performed.
@@ -364,7 +364,7 @@ impl Default for AtlasSprite3d {
             transform: Transform::default(),
             atlas: Handle::<TextureAtlas>::default(),
             index: 0,
-            pixels_per_metre: 100.,
+            pixels_per_meter: 100.,
             pivot: None,
             partial_alpha: false,
             unlit: false,
@@ -403,8 +403,8 @@ impl AtlasSprite3d {
         for i in 0..atlas.textures.len() {
             let rect = atlas.textures[i];
 
-            let w = rect.width() / self.pixels_per_metre;
-            let h = rect.height() / self.pixels_per_metre;
+            let w = rect.width() / self.pixels_per_meter;
+            let h = rect.height() / self.pixels_per_meter;
 
             let frac_rect = bevy::math::Rect {
                 min: Vec2::new(

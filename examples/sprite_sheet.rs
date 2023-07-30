@@ -77,7 +77,7 @@ fn setup(
             AtlasSprite3d {
                 atlas: assets.atlas.clone(),
 
-                pixels_per_metre: 32.,
+                pixels_per_meter: 32.,
                 partial_alpha: true,
                 unlit: true,
 

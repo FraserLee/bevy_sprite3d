@@ -458,7 +458,7 @@ fn spawn_sprites(
             commands.spawn(
                 AtlasSprite3d {
                     atlas: images.tileset.clone(),
-                    pixels_per_metre: 16.,
+                    pixels_per_meter: 16.,
                     index: index as usize,
                     double_sided: false,
                     transform: Transform::from_xyz(x, 0.0, y)
@@ -534,7 +534,7 @@ fn spawn_sprites(
                 commands.spawn(
                     AtlasSprite3d {
                         atlas: images.tileset.clone(),
-                        pixels_per_metre: 16.,
+                        pixels_per_meter: 16.,
                         index: (tile_x + (5 - i) * 30) as usize,
                         double_sided: false,
                         transform: Transform::from_xyz(x + 0.5, i as f32 + 0.499, y)
@@ -583,7 +583,7 @@ fn spawn_sprites(
                 commands.spawn(
                     AtlasSprite3d {
                         atlas: images.tileset.clone(),
-                        pixels_per_metre: 16.,
+                        pixels_per_meter: 16.,
                         index: (tile_x + (5 - i) * 30) as usize,
                         double_sided: false,
                         transform: Transform::from_xyz(x, i as f32 + 0.499, y + 0.5).with_rotation(
@@ -607,7 +607,7 @@ fn spawn_sprites(
             let mut c = commands.spawn((
                 AtlasSprite3d {
                     atlas: images.tileset.clone(),
-                    pixels_per_metre: 16.,
+                    pixels_per_meter: 16.,
                     index: (tile_x + (tile_y - i) * 30) as usize,
                     transform: Transform::from_xyz(x as f32, i as f32 + 0.498, y),
                     ..default()
@@ -647,7 +647,7 @@ fn spawn_sprites(
     commands.spawn((
         AtlasSprite3d {
             atlas: images.tileset.clone(),
-            pixels_per_metre: 16.,
+            pixels_per_meter: 16.,
             index: 30 * 32 + 14,
             transform: Transform::from_xyz(2.0, 0.5, -5.5),
             emissive: Color::rgb(1.0, 0.5, 0.0) * 10.0,
@@ -677,7 +677,7 @@ fn spawn_sprites(
     commands.spawn((
         AtlasSprite3d {
             atlas: images.tileset.clone(),
-            pixels_per_metre: 16.,
+            pixels_per_meter: 16.,
             index: 22 * 30 + 22,
             transform: Transform::from_xyz(-5., 0.7, 6.5),
             emissive: Color::rgb(165. / 255., 1.0, 160. / 255.),

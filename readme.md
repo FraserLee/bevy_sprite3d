@@ -55,7 +55,7 @@ fn setup(
     commands.spawn_bundle(Sprite3d {
             image: images.sprite.clone(),
 
-            pixels_per_metre: 400.,
+            pixels_per_meter: 400.,
 
             partial_alpha: true,
 
@@ -74,7 +74,7 @@ fn setup(
     commands.spawn_bundle(AtlasSprite3d {
             atlas: images.sprite_sheet.clone(),
 
-            pixels_per_metre: 32.,
+            pixels_per_meter: 32.,
             partial_alpha: true,
             unlit: true,
 

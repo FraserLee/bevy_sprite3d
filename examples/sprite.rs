@@ -57,7 +57,7 @@ fn setup(
         Sprite3d {
             image: assets.0.clone(),
 
-            pixels_per_metre: 400.,
+            pixels_per_meter: 400.,
 
             partial_alpha: true,
 
