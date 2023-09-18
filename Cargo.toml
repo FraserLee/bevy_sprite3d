@@ -1,6 +1,6 @@
 [package]
 name = "bevy_sprite3d"
-version = "2.5.0"
+version = "2.6.0"
 edition = "2021"
 
 description = "Bevy Plugin to allow using 2d sprites in a 3d scene."
@@ -15,5 +15,5 @@ default-features = false
 features = ["bevy_asset", "bevy_pbr", "bevy_sprite"]
 
 [dev-dependencies]
-bevy.version = "0.11" #(include default features when running examples)
+bevy.version = "0.11" # (include default features when running examples)
 rand = "0.8"
