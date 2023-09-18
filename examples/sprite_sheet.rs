@@ -69,7 +69,7 @@ fn setup(
             atlas: assets.atlas.clone(),
 
             pixels_per_metre: 32.,
-            alpha_mode: Some(AlphaMode::Blend),
+            alpha_mode: AlphaMode::Blend,
             unlit: true,
 
             index: 3,

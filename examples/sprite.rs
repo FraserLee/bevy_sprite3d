@@ -54,7 +54,7 @@ fn setup(
 
             pixels_per_metre: 400.,
 
-            alpha_mode: Some(AlphaMode::Blend),
+            alpha_mode: AlphaMode::Blend,
 
             unlit: true,
 
