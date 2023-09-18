@@ -325,7 +325,7 @@ pub struct AtlasSprite3d {
     ///   (though you can go out of bounds without issue)
     pub pivot: Option<Vec2>,
 
-    /// Wheather sprite's partial alpha should be handled in a particular way.
+    /// The sprite's alpha mode.
     ///
     /// - `None` (default) only allows fully opaque or fully transparent pixels
     ///   (cutoff at `0.5`).
