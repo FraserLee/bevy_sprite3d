@@ -20,7 +20,7 @@ enum GameState { #[default] Loading, Ready }
 //     #[asset(texture_atlas(tile_size_x = 16., tile_size_y = 16.,
 //             columns = 30, rows = 35, padding_x = 10., padding_y = 10.,
 //             offset_x = 5., offset_y = 5.))]
-//     #[asset(path = "dungeon/art/tileset_padded.png")]
+//     #[asset(path = "dungeon/tileset_padded.png")]
 //     tileset: Handle<TextureAtlas>,
 // }
 #[derive(Resource, Default)]
@@ -50,7 +50,7 @@ fn main() {
                                mut assets:           ResMut<ImageAssets>,
                                mut texture_atlases:  ResMut<Assets<TextureAtlas>>| {
 
-            assets.image = asset_server.load("dungeon/art/tileset_padded.png");
+            assets.image = asset_server.load("dungeon/tileset_padded.png");
 
             assets.tileset = texture_atlases.add(
                 TextureAtlas::from_grid(assets.image.clone(),
