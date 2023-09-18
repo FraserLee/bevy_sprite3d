@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use bevy::render::{ mesh::*, render_resource::* };
-
+use std::hash::Hash;
 use std::collections::HashMap;
 
 pub struct Sprite3dPlugin;
@@ -31,12 +31,34 @@ pub struct Sprite3dParams<'w, 's> {
 }
 
 #[derive(Eq, Hash, PartialEq)]
-pub struct MatKey{
+pub struct MatKey {
     image: Handle<Image>,
-    partial_alpha: bool,
+    alpha_mode: HashableAlphaMode,
     unlit: bool,
     emissive: [u8; 4],
 }
+
+const DEFAULT_ALPHA_MODE: AlphaMode = AlphaMode::Mask(0.5);
+
+#[derive(Eq, PartialEq)]
+struct HashableAlphaMode(AlphaMode);
+
+impl Hash for HashableAlphaMode {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match self.0 {
+            AlphaMode::Opaque => 0.hash(state),
+            AlphaMode::Mask(f) => {
+                1.hash(state);
+                f.to_bits().hash(state);
+            },
+            AlphaMode::Blend => 2.hash(state),
+            AlphaMode::Premultiplied => 3.hash(state),
+            AlphaMode::Add => 4.hash(state),
+            AlphaMode::Multiply => 5.hash(state),
+        }
+    }
+}
+
 
 fn reduce_colour(c: Color) -> [u8; 4] { [
         (c.r() * 255.) as u8,
@@ -120,12 +142,11 @@ fn quad(w: f32, h: f32, pivot: Option<Vec2>, double_sided: bool) -> Mesh {
 
 
 // generate a StandardMaterial useful for rendering a sprite
-fn material(image: Handle<Image>, partial_alpha: bool, unlit: bool, emissive: Color) -> StandardMaterial {
+fn material(image: Handle<Image>, alpha_mode: AlphaMode, unlit: bool, emissive: Color) -> StandardMaterial {
     StandardMaterial {
         base_color_texture: Some(image),
         cull_mode: Some(Face::Back),
-        alpha_mode: if partial_alpha { AlphaMode::Blend }
-                    else { AlphaMode::Mask(0.5) },
+        alpha_mode,
         unlit,
         perceptual_roughness: 0.5,
         reflectance: 0.15,
@@ -161,14 +182,13 @@ pub struct Sprite3d {
     ///   (though you can go out of bounds without issue)
     pub pivot: Option<Vec2>,
 
-    /// Whether the sprite should support partial alpha.
+    /// Wheather sprite's partial alpha should be handled in a particular way.
     ///
-    /// - `false` (default) only allows fully opaque or fully transparent pixels
+    /// - `None` (default) only allows fully opaque or fully transparent pixels
     ///   (cutoff at `0.5`).
-    /// - `true` allows partially transparent pixels
-    ///   (slightly more expensive, so disabled when not needed).
-    pub partial_alpha: bool,
-
+    /// - `Some(AlphaMode)` allows setting a custom alpha mode. Use `Some(AlphaMode::Blend)`
+    ///   for partially transparent pixels (slightly more expensive).
+    pub alpha_mode: Option<AlphaMode>,
 
     /// Whether the sprite should be rendered as unlit.
     /// `false` (default) allows for lighting.
@@ -191,7 +211,7 @@ impl Default for Sprite3d {
             image: Default::default(),
             pixels_per_metre: 100.,
             pivot: None,
-            partial_alpha: false,
+            alpha_mode: None,
             unlit: false,
             double_sided: true,
             emissive: Color::BLACK,
@@ -249,16 +269,17 @@ impl Sprite3d {
                 // likewise for material, use the existing if the image is already cached.
                 // (possibly look into a bool in Sprite3d to manually disable caching for an individual sprite?)
                 material: {
+                    let alpha_mode = self.alpha_mode.unwrap_or(DEFAULT_ALPHA_MODE);
                     let mat_key = MatKey {
                         image: self.image.clone(),
-                        partial_alpha: self.partial_alpha,
+                        alpha_mode: HashableAlphaMode(alpha_mode),
                         unlit: self.unlit,
                         emissive: reduce_colour(self.emissive),
                     };
 
                     if let Some(material) = params.sr.material_cache.get(&mat_key) { material.clone() }
                     else {
-                        let material = params.materials.add(material(self.image.clone(), self.partial_alpha, self.unlit, self.emissive));
+                        let material = params.materials.add(material(self.image.clone(), alpha_mode, self.unlit, self.emissive));
                         params.sr.material_cache.insert(mat_key, material.clone());
                         material
                     }
@@ -304,13 +325,13 @@ pub struct AtlasSprite3d {
     ///   (though you can go out of bounds without issue)
     pub pivot: Option<Vec2>,
 
-    /// Whether the sprite should support partial alpha.
+    /// Wheather sprite's partial alpha should be handled in a particular way.
     ///
-    /// - `false` (default) only allows fully opaque or fully transparent pixels
+    /// - `None` (default) only allows fully opaque or fully transparent pixels
     ///   (cutoff at `0.5`).
-    /// - `true` allows partially transparent pixels
-    ///   (slightly more expensive, so disabled when not needed).
-    pub partial_alpha: bool,
+    /// - `Some(AlphaMode)` allows setting a custom alpha mode. Use `Some(AlphaMode::Blend)`
+    ///   for partially transparent pixels (slightly more expensive).
+    pub alpha_mode: Option<AlphaMode>,
 
     /// Whether the sprite should be rendered as unlit.
     /// `false` (default) allows for lighting.
@@ -334,7 +355,7 @@ impl Default for AtlasSprite3d {
             index: 0,
             pixels_per_metre: 100.,
             pivot: None,
-            partial_alpha: false,
+            alpha_mode: None,
             unlit: false,
             double_sided: true,
             emissive: Color::BLACK,
@@ -432,15 +453,16 @@ impl AtlasSprite3d {
             pbr: PbrBundle {
                 mesh: params.sr.mesh_cache.get(&mesh_keys[self.index]).unwrap().clone(),
                 material: {
+                    let alpha_mode = self.alpha_mode.unwrap_or(DEFAULT_ALPHA_MODE);
                     let mat_key = MatKey {
                         image: atlas.texture.clone(),
-                        partial_alpha: self.partial_alpha,
+                        alpha_mode: HashableAlphaMode(alpha_mode),
                         unlit: self.unlit,
                         emissive: reduce_colour(self.emissive),
                     };
                     if let Some(material) = params.sr.material_cache.get(&mat_key) { material.clone() }
                     else {
-                        let material = params.materials.add(material(atlas.texture.clone(), self.partial_alpha, self.unlit, self.emissive));
+                        let material = params.materials.add(material(atlas.texture.clone(), alpha_mode, self.unlit, self.emissive));
                         params.sr.material_cache.insert(mat_key, material.clone());
                         material
                     }
@@ -456,6 +478,3 @@ impl AtlasSprite3d {
         }
     }
 }
-
-
-
