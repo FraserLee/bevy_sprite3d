@@ -54,7 +54,7 @@ fn setup(
 ) {
 
     // poll every frame to check if assets are loaded. Once they are, we can proceed with setup.
-    if asset_server.get_load_state(assets.image.clone()) != LoadState::Loaded { return; }
+    if asset_server.get_load_state(assets.image.clone()) != Some(LoadState::Loaded) { return; }
 
     next_state.set(GameState::Ready);
 

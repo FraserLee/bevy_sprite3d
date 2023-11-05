@@ -101,7 +101,8 @@ simplicity. Examples are provided both with and without it.
 ## Versioning
 
 | `bevy_sprite3d` version | `bevy` version |
-| ----------------------- | -------------- |
+|-------------------------|----------------|
+| 2.7                     | 0.12           |
 | 2.5 - 2.6               | 0.11           |
 | 2.4                     | 0.10           |
 | 2.1 - 2.4               | 0.9            |
