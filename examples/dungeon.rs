@@ -68,7 +68,7 @@ fn main() {
                         assets         : Res<ImageAssets>,
                         mut next_state : ResMut<NextState<GameState>>| {
 
-            if asset_server.get_load_state(assets.image.clone()) == LoadState::Loaded {
+            if asset_server.get_load_state(assets.image.clone()) == Some(LoadState::Loaded) {
                 next_state.set(GameState::Ready);
             }
         }).run_if(in_state(GameState::Loading)) )
