@@ -87,12 +87,12 @@ fn setup(
 
 fn animate_sprite(
     time: Res<Time>,
-    mut query: Query<(&mut AnimationTimer, &mut TextureAtlas, &AtlasSprite3dKeys)>,
+    mut query: Query<(&mut AnimationTimer, &mut TextureAtlas, &TextureAtlas3dData)>,
 ) {
-    for (mut timer, mut atlas, keys) in query.iter_mut() {
+    for (mut timer, mut atlas, data) in query.iter_mut() {
         timer.tick(time.delta());
         if timer.just_finished() {
-            atlas.index = (atlas.index + 1) % keys.len();
+            atlas.index = (atlas.index + 1) % data.keys.len();
         }
     }
 }

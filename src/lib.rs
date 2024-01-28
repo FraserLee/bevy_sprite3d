@@ -233,7 +233,7 @@ pub struct Sprite3dComponent {}
 // Stores mesh keys since the previous AtlasSprite3dComponent was removed.
 #[derive(Component)]
 pub struct TextureAtlas3dData {
-    keys: Vec<[u32; 9]>,
+    pub keys: Vec<[u32; 9]>,
 }
 
 #[derive(Bundle)]
