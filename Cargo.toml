@@ -10,14 +10,14 @@ repository = "https://github.com/FraserLee/bevy_sprite3d"
 keywords = ["gamedev", "bevy", "sprite", "3d"]
 
 [dependencies.bevy]
-# Switch back to "1.13" once that version comes out.
+# Switch to "0.13" once that version comes out.
 # I don't know if there's a better way to do this.
-# version = "0.12"
+# version = "0.13"
 git = "https://github.com/bevyengine/bevy.git"
 default-features = false
 features = ["bevy_asset", "bevy_pbr", "bevy_sprite"]
 
 [dev-dependencies]
-# bevy.version = "0.12" # (include default features when running examples)
+# bevy.version = "0.13" # (include default features when running examples)
 bevy = { git = "https://github.com/bevyengine/bevy.git" }
 rand = "0.8"
