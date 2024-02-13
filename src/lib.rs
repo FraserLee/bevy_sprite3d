@@ -112,39 +112,84 @@ fn quad(w: f32, h: f32, pivot: Option<Vec2>, double_sided: bool) -> Mesh {
     let h2 = h / 2.0;
     let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
     let vertices = match pivot {
-        None => { vec![[-w2, -h2, 0.0], [w2, -h2, 0.0], [-w2, h2, 0.0], [w2, h2, 0.0],
-                       [-w2, -h2, 0.0], [w2, -h2, 0.0], [-w2, h2, 0.0], [w2, h2, 0.0]] },
+        None => {
+            vec![
+                [-w2, -h2, 0.0],
+                [w2, -h2, 0.0],
+                [-w2, h2, 0.0],
+                [w2, h2, 0.0],
+                [-w2, -h2, 0.0],
+                [w2, -h2, 0.0],
+                [-w2, h2, 0.0],
+                [w2, h2, 0.0],
+            ]
+        }
         Some(pivot) => {
             let px = pivot.x * w;
             let py = pivot.y * h;
-            vec![[-px, -py, 0.0], [w - px, -py, 0.0], [-px, h - py, 0.0], [w - px, h - py, 0.0],
-                 [-px, -py, 0.0], [w - px, -py, 0.0], [-px, h - py, 0.0], [w - px, h - py, 0.0]]
+            vec![
+                [-px, -py, 0.0],
+                [w - px, -py, 0.0],
+                [-px, h - py, 0.0],
+                [w - px, h - py, 0.0],
+                [-px, -py, 0.0],
+                [w - px, -py, 0.0],
+                [-px, h - py, 0.0],
+                [w - px, h - py, 0.0],
+            ]
         }
     };
 
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, vertices);
 
-    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, vec![[0.0, 0.0,  1.0], [0.0, 0.0,  1.0], [0.0, 0.0,  1.0], [0.0, 0.0,  1.0],
-                                                       [0.0, 0.0, -1.0], [0.0, 0.0, -1.0], [0.0, 0.0, -1.0], [0.0, 0.0, -1.0]]);
+    mesh.insert_attribute(
+        Mesh::ATTRIBUTE_NORMAL,
+        vec![
+            [0.0, 0.0, 1.0],
+            [0.0, 0.0, 1.0],
+            [0.0, 0.0, 1.0],
+            [0.0, 0.0, 1.0],
+            [0.0, 0.0, -1.0],
+            [0.0, 0.0, -1.0],
+            [0.0, 0.0, -1.0],
+            [0.0, 0.0, -1.0],
+        ],
+    );
 
-    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, vec![[0.0, 1.0], [1.0, 1.0], [0.0, 0.0], [1.0, 0.0],
-                                                     [0.0, 1.0], [1.0, 1.0], [0.0, 0.0], [1.0, 0.0]]);
+    mesh.insert_attribute(
+        Mesh::ATTRIBUTE_UV_0,
+        vec![
+            [0.0, 1.0],
+            [1.0, 1.0],
+            [0.0, 0.0],
+            [1.0, 0.0],
+            [0.0, 1.0],
+            [1.0, 1.0],
+            [0.0, 0.0],
+            [1.0, 0.0],
+        ],
+    );
 
-    mesh.set_indices(Some(Indices::U32(
-        if double_sided { vec![0, 1, 2, 1, 3, 2, 5, 4, 6, 7, 5, 6] }
-        else {            vec![0, 1, 2, 1, 3, 2] }
-    )));
+    mesh.set_indices(Some(Indices::U32(if double_sided {
+        vec![0, 1, 2, 1, 3, 2, 5, 4, 6, 7, 5, 6]
+    } else {
+        vec![0, 1, 2, 1, 3, 2]
+    })));
 
     mesh
 }
 
-
-
-
 // generate a StandardMaterial useful for rendering a sprite
-fn material(image: Handle<Image>, alpha_mode: AlphaMode, unlit: bool, emissive: Color) -> StandardMaterial {
+fn material(
+    image: Handle<Image>,
+    alpha_mode: AlphaMode,
+    unlit: bool,
+    emissive: Color,
+    base_color: Color,
+) -> StandardMaterial {
     StandardMaterial {
         base_color_texture: Some(image),
+        base_color,
         cull_mode: Some(Face::Back),
         alpha_mode,
         unlit,
@@ -202,6 +247,7 @@ pub struct Sprite3d {
     /// An emissive colour, if the sprite should emit light.
     /// `Color::Black` (default) does nothing.
     pub emissive: Color,
+    pub base_color: Color,
 }
 
 impl Default for Sprite3d {
@@ -209,6 +255,7 @@ impl Default for Sprite3d {
         Self {
             transform: Default::default(),
             image: Default::default(),
+            base_color: Color::WHITE,
             pixels_per_metre: 100.,
             pivot: None,
             alpha_mode: DEFAULT_ALPHA_MODE,
@@ -276,9 +323,16 @@ impl Sprite3d {
                         emissive: reduce_colour(self.emissive),
                     };
 
-                    if let Some(material) = params.sr.material_cache.get(&mat_key) { material.clone() }
-                    else {
-                        let material = params.materials.add(material(self.image.clone(), self.alpha_mode, self.unlit, self.emissive));
+                    if let Some(material) = params.sr.material_cache.get(&mat_key) {
+                        material.clone()
+                    } else {
+                        let material = params.materials.add(material(
+                            self.image.clone(),
+                            self.alpha_mode,
+                            self.unlit,
+                            self.emissive,
+                            self.base_color,
+                        ));
                         params.sr.material_cache.insert(mat_key, material.clone());
                         material
                     }
@@ -344,6 +398,7 @@ pub struct AtlasSprite3d {
     /// An emissive colour, if the sprite should emit light.
     /// `Color::Black` (default) does nothing.
     pub emissive: Color,
+    pub base_color: Color,
 }
 
 impl Default for AtlasSprite3d {
@@ -358,11 +413,10 @@ impl Default for AtlasSprite3d {
             unlit: false,
             double_sided: true,
             emissive: Color::BLACK,
+            base_color: Color::WHITE,
         }
     }
 }
-
-
 
 #[derive(Component)]
 pub struct AtlasSprite3dComponent {
@@ -458,9 +512,16 @@ impl AtlasSprite3d {
                         unlit: self.unlit,
                         emissive: reduce_colour(self.emissive),
                     };
-                    if let Some(material) = params.sr.material_cache.get(&mat_key) { material.clone() }
-                    else {
-                        let material = params.materials.add(material(atlas.texture.clone(), self.alpha_mode, self.unlit, self.emissive));
+                    if let Some(material) = params.sr.material_cache.get(&mat_key) {
+                        material.clone()
+                    } else {
+                        let material = params.materials.add(material(
+                            atlas.texture.clone(),
+                            self.alpha_mode,
+                            self.unlit,
+                            self.emissive,
+                            self.base_color,
+                        ));
                         params.sr.material_cache.insert(mat_key, material.clone());
                         material
                     }
