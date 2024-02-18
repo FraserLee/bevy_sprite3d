@@ -98,16 +98,14 @@ fn setup(
 ) {
     // cube
     commands.spawn(PbrBundle {
-        mesh: meshes.add(Mesh::from(shape::Cube { size: 1.0 })),
+        mesh: meshes.add(Mesh::from(Cuboid::from_size(Vec3::splat(1.0)))),
         material: materials.add(Color::WHITE),
         transform: Transform::from_xyz(-0.9, 0.5, -3.1),
         ..default()
     });
     // sphere
     commands.spawn(PbrBundle {
-        mesh: meshes.add(
-            Mesh::try_from(shape::Icosphere { radius: 0.6, subdivisions: 20 }).unwrap()
-        ),
+        mesh: meshes.add(Sphere::new(0.6)),
         material: materials.add(Color::WHITE),
         transform: Transform::from_xyz(-0.9, 0.5, -4.2),
         ..default()
