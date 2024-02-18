@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use bevy::render::{ mesh::*, render_resource::*, render_asset::RenderAssetPersistencePolicy };
+use bevy::render::{ mesh::*, render_resource::*, render_asset::RenderAssetUsages};
 use std::hash::Hash;
 use std::collections::HashMap;
 
@@ -114,9 +114,13 @@ fn quad(w: f32, h: f32, pivot: Option<Vec2>, double_sided: bool) -> Mesh {
     let w2 = w / 2.0;
     let h2 = h / 2.0;
 
-    // Set the PersistencePolicy to the default value. Maybe allow customization or
+    // Set RenderAssetUsages to the default value. Maybe allow customization or
     // choose a better default?
-    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetPersistencePolicy::default());
+    let mut mesh = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::default(),
+    );
+
     let vertices = match pivot {
         None => { vec![[-w2, -h2, 0.0], [w2, -h2, 0.0], [-w2, h2, 0.0], [w2, h2, 0.0],
                        [-w2, -h2, 0.0], [w2, -h2, 0.0], [-w2, h2, 0.0], [w2, h2, 0.0]] },
@@ -136,10 +140,10 @@ fn quad(w: f32, h: f32, pivot: Option<Vec2>, double_sided: bool) -> Mesh {
     mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, vec![[0.0, 1.0], [1.0, 1.0], [0.0, 0.0], [1.0, 0.0],
                                                      [0.0, 1.0], [1.0, 1.0], [0.0, 0.0], [1.0, 0.0]]);
 
-    mesh.set_indices(Some(Indices::U32(
+    mesh.insert_indices(Indices::U32(
         if double_sided { vec![0, 1, 2, 1, 3, 2, 5, 4, 6, 7, 5, 6] }
         else {            vec![0, 1, 2, 1, 3, 2] }
-    )));
+    ));
 
     mesh
 }
