@@ -7,7 +7,7 @@ enum GameState { #[default] Loading, Ready }
 
 #[derive(Resource, Default)]
 struct ImageAssets {
-    image: Handle<Image>,        // the `image` field here is only used to query the load state, lots of the
+    image: Handle<Image>,               // the `image` field here is only used to query the load state, lots of the
     layout: Handle<TextureAtlasLayout>, // code in this file disappears if something like bevy_asset_loader is used.
 }
 
