@@ -1,9 +1,7 @@
 use bevy::{prelude::*, window::WindowResolution};
 use bevy::asset::LoadState;
 use bevy::core_pipeline::bloom::BloomSettings;
-use bevy::core_pipeline::clear_color::ClearColorConfig;
 use bevy::core_pipeline::tonemapping::Tonemapping;
-use bevy::render::camera::PerspectiveProjection;
 use bevy::utils::Duration;
 use bevy::pbr::ScreenSpaceAmbientOcclusionBundle;
 use bevy::core_pipeline::experimental::taa::TemporalAntiAliasBundle;
@@ -26,7 +24,7 @@ enum GameState { #[default] Loading, Ready }
 #[derive(Resource, Default)]
 struct ImageAssets {
     image: Handle<Image>,
-    tileset: Handle<TextureAtlas>,
+    layout: Handle<TextureAtlasLayout>,
 }
 
 
@@ -43,17 +41,17 @@ fn main() {
             }))
         .insert_resource(Msaa::Off)
         .add_plugins(Sprite3dPlugin)
-        .add_state::<GameState>()
+        .init_state::<GameState>()
 
         // initially load assets
-        .add_systems(Startup, |asset_server:         Res<AssetServer>,
-                               mut assets:           ResMut<ImageAssets>,
-                               mut texture_atlases:  ResMut<Assets<TextureAtlas>>| {
+        .add_systems(Startup, |asset_server: Res<AssetServer>,
+                               mut assets:   ResMut<ImageAssets>,
+                               mut layouts:  ResMut<Assets<TextureAtlasLayout>>| {
 
             assets.image = asset_server.load("dungeon/tileset_padded.png");
 
-            assets.tileset = texture_atlases.add(
-                TextureAtlas::from_grid(assets.image.clone(),
+            assets.layout = layouts.add(
+                TextureAtlasLayout::from_grid(
                                         Vec2::new(16.0, 16.0),
                                         30,
                                         35,
@@ -63,7 +61,7 @@ fn main() {
         })
 
         // every frame check if assets are loaded. Once they are, we can proceed with setup.
-        .add_systems( Update, (
+        .add_systems(Update, (
                        |asset_server   : Res<AssetServer>,
                         assets         : Res<ImageAssets>,
                         mut next_state : ResMut<NextState<GameState>>| {
@@ -99,23 +97,23 @@ fn setup(
 ) {
     // cube
     commands.spawn(PbrBundle {
-        mesh: meshes.add(Mesh::from(shape::Cube { size: 1.0 })),
-        material: materials.add(Color::WHITE.into()),
+        mesh: meshes.add(Mesh::from(Cuboid::from_size(Vec3::splat(1.0)))),
+        material: materials.add(Color::WHITE),
         transform: Transform::from_xyz(-0.9, 0.5, -3.1),
         ..default()
     });
     // sphere
     commands.spawn(PbrBundle {
-        mesh: meshes.add(shape::Icosphere { radius: 0.6, subdivisions: 20 }.try_into().unwrap()),
-        material: materials.add(Color::WHITE.into()),
+        mesh: meshes.add(Sphere::new(0.6)),
+        material: materials.add(Color::WHITE),
         transform: Transform::from_xyz(-0.9, 0.5, -4.2),
         ..default()
     });
 
     // camera
     commands.spawn((Camera3dBundle {
-            camera: Camera { hdr: true, ..default() },
-            camera_3d: Camera3d {
+            camera: Camera {
+                hdr: true,
                 clear_color: ClearColorConfig::Custom(Color::rgb(1.0, 1.0, 1.0) * 0.0),
                 ..default()
             },
@@ -211,14 +209,18 @@ fn spawn_sprites(
             let (x, y) = (x as f32 - map[y].len() as f32 / 2.0, y as f32 - map.len() as f32 / 2.0);
             if index == 0 { continue; }
 
-            commands.spawn(AtlasSprite3d {
-                    atlas: images.tileset.clone(),
+            let atlas = TextureAtlas {
+                layout: images.layout.clone(),
+                index: index as usize,
+            };
+
+            commands.spawn(Sprite3d {
+                    image: images.image.clone(),
                     pixels_per_metre: 16.,
-                    index: index as usize,
                     double_sided: false,
                     transform: Transform::from_xyz(x, 0.0, y).with_rotation(Quat::from_rotation_x(-std::f32::consts::PI / 2.0)),
                     ..default()
-            }.bundle(&mut sprite_params));
+            }.bundle_with_atlas(&mut sprite_params, atlas));
         }
     }
 
@@ -259,17 +261,21 @@ fn spawn_sprites(
 
             let (x, y) = (x as f32 - map[y].len() as f32 / 2.0, y as f32 - map.len() as f32 / 2.0);
 
-            for i in [0,1]{ // add bottom and top piece
-                commands.spawn(AtlasSprite3d {
-                        atlas: images.tileset.clone(),
+            for i in [0,1] { // add bottom and top piece
+                let atlas = TextureAtlas {
+                    layout: images.layout.clone(),
+                    index: (tile_x + (5 - i) * 30) as usize,
+                };
+                
+                commands.spawn(Sprite3d {
+                        image: images.image.clone(),
                         pixels_per_metre: 16.,
-                        index: (tile_x + (5 - i) * 30) as usize,
                         double_sided: false,
                         transform: Transform::from_xyz(x+0.5, i as f32 + 0.499, y)
                             .with_rotation(Quat::from_rotation_y(
                                 dir * std::f32::consts::PI / 2.0)),
                         ..default()
-                }.bundle(&mut sprite_params));
+                }.bundle_with_atlas(&mut sprite_params, atlas));
             }
         }
     }
@@ -293,16 +299,20 @@ fn spawn_sprites(
             let (x, y) = (x as f32 - map[y].len() as f32 / 2.0, y as f32 - map.len() as f32 / 2.0);
 
             for i in [0,1]{ // add bottom and top piece
-                commands.spawn(AtlasSprite3d {
-                        atlas: images.tileset.clone(),
+                let atlas = TextureAtlas {
+                    layout: images.layout.clone(),
+                    index: (tile_x + (5 - i) * 30) as usize,
+                };
+
+                commands.spawn(Sprite3d {
+                        image: images.image.clone(),
                         pixels_per_metre: 16.,
-                        index: (tile_x + (5 - i) * 30) as usize,
                         double_sided: false,
                         transform: Transform::from_xyz(x, i as f32 + 0.499, y + 0.5)
                             .with_rotation(Quat::from_rotation_y(
                                     (dir - 1.0) * std::f32::consts::PI / 2.0)),
                         ..default()
-                }.bundle(&mut sprite_params));
+                }.bundle_with_atlas(&mut sprite_params, atlas));
             }
         }
     }
@@ -314,13 +324,17 @@ fn spawn_sprites(
         timer.set_elapsed(Duration::from_secs_f32(rng.gen_range(0.0..0.4)));
 
         for i in 0usize..height {
-            let mut c = commands.spawn((AtlasSprite3d {
-                    atlas: images.tileset.clone(),
+            let atlas = TextureAtlas {
+                layout: images.layout.clone(),
+                index: (tile_x + (tile_y - i) * 30) as usize,
+            };
+
+            let mut c = commands.spawn((Sprite3d {
+                    image: images.image.clone(),
                     pixels_per_metre: 16.,
-                    index: (tile_x + (tile_y - i) * 30) as usize,
                     transform: Transform::from_xyz(x as f32, i as f32 + 0.498, y),
                     ..default()
-                }.bundle(&mut sprite_params),
+                }.bundle_with_atlas(&mut sprite_params, atlas),
                 FaceCamera {},
             ));
 
@@ -350,15 +364,19 @@ fn spawn_sprites(
     entity((4.2, -8.),  13, 16, 2, 1);
 
     // fire
-    commands.spawn((AtlasSprite3d {
-            atlas: images.tileset.clone(),
+    let atlas = TextureAtlas {
+        layout: images.layout.clone(),
+        index: 30*32 + 14,
+    };
+
+    commands.spawn((Sprite3d {
+            image: images.image.clone(),
             pixels_per_metre: 16.,
-            index: 30*32 + 14,
             transform: Transform::from_xyz(2.0, 0.5, -5.5),
             emissive: Color::rgb(1.0, 0.5, 0.0) * 10.0,
             unlit: true,
             ..default()
-        }.bundle(&mut sprite_params),
+        }.bundle_with_atlas(&mut sprite_params, atlas),
 
         Animation {
             frames: vec![30*32 + 14, 30*32 + 15, 30*32 + 16],
@@ -370,7 +388,7 @@ fn spawn_sprites(
     ));
     commands.spawn(PointLightBundle {
         point_light: PointLight {
-            intensity: 300.0,
+            intensity: 500_000.0,
             color: Color::rgb(1.0, 231./255., 221./255.),
             shadows_enabled: true,
             ..default()
@@ -380,21 +398,25 @@ fn spawn_sprites(
     });
 
     // glowy book
-    commands.spawn((AtlasSprite3d {
-            atlas: images.tileset.clone(),
+    let atlas = TextureAtlas {
+        layout: images.layout.clone(),
+        index: 22*30 + 22,
+    };
+
+    commands.spawn((Sprite3d {
+            image: images.image.clone(),
             pixels_per_metre: 16.,
-            index: 22*30 + 22,
             transform: Transform::from_xyz(-5., 0.7, 6.5),
             emissive: Color::rgb(165./255., 1.0, 160./255.),
             unlit: true,
             ..default()
-        }.bundle(&mut sprite_params),
+        }.bundle_with_atlas(&mut sprite_params, atlas),
 
         FaceCamera {}
     ));
     commands.spawn(PointLightBundle {
         point_light: PointLight {
-            intensity: 100.0,
+            intensity: 70_000.0,
             color: Color::rgb(91./255., 1.0, 92./255.),
             shadows_enabled: true,
             ..default()
@@ -432,12 +454,12 @@ fn animate_camera(
 
 fn animate_sprites(
     time: Res<Time>,
-    mut query: Query<(&mut Animation, &mut AtlasSprite3dComponent)>,
+    mut query: Query<(&mut Animation, &mut TextureAtlas)>,
 ) {
-    for (mut animation, mut sprite) in query.iter_mut() {
+    for (mut animation, mut atlas) in query.iter_mut() {
         animation.timer.tick(time.delta());
         if animation.timer.just_finished() {
-            sprite.index = animation.frames[animation.current];
+            atlas.index = animation.frames[animation.current];
             animation.current += 1;
             animation.current %= animation.frames.len();
         }

@@ -7,8 +7,8 @@ enum GameState { #[default] Loading, Ready }
 
 #[derive(Resource, Default)]
 struct ImageAssets {
-    image: Handle<Image>,        // the `image` field here is only used to query the load state, lots of the
-    atlas: Handle<TextureAtlas>, // code in this file disappears if something like bevy_asset_loader is used.
+    image: Handle<Image>,               // the `image` field here is only used to query the load state, lots of the
+    layout: Handle<TextureAtlasLayout>, // code in this file disappears if something like bevy_asset_loader is used.
 }
 
 #[derive(Component, Deref, DerefMut)]
@@ -19,17 +19,16 @@ fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(ImagePlugin::default_nearest()))
         .add_plugins(Sprite3dPlugin)
-        .add_state::<GameState>()
+        .init_state::<GameState>()
 
         // initially load assets
         .add_systems(Startup, |asset_server:         Res<AssetServer>,
                                mut assets:           ResMut<ImageAssets>,
-                               mut texture_atlases:  ResMut<Assets<TextureAtlas>>| {
+                               mut texture_atlases:  ResMut<Assets<TextureAtlasLayout>>| {
 
             assets.image = asset_server.load("gabe-idle-run.png");
-
-            assets.atlas = texture_atlases.add(
-                TextureAtlas::from_grid(assets.image.clone(), Vec2::new(24.0, 24.0), 7, 1, None, None)
+            assets.layout = texture_atlases.add(
+                TextureAtlasLayout::from_grid(Vec2::new(24.0, 24.0), 7, 1, None, None)
             );
         })
 
@@ -65,20 +64,21 @@ fn setup(
 
     // -------------------- Spawn a 3D atlas sprite --------------------------
 
-    commands.spawn(AtlasSprite3d {
-            atlas: assets.atlas.clone(),
+    let texture_atlas = TextureAtlas {
+        layout: assets.layout.clone(),
+        index: 3,
+    };
 
+    commands.spawn(Sprite3d {
+            image: assets.image.clone(),
             pixels_per_metre: 32.,
             alpha_mode: AlphaMode::Blend,
             unlit: true,
-
-            index: 3,
-
             // transform: Transform::from_xyz(0., 0., 0.),
             // pivot: Some(Vec2::new(0.5, 0.5)),
 
             ..default()
-    }.bundle(&mut sprite_params))
+    }.bundle_with_atlas(&mut sprite_params, texture_atlas))
     .insert(AnimationTimer(Timer::from_seconds(0.1, TimerMode::Repeating)));
 
     // -----------------------------------------------------------------------
@@ -87,12 +87,12 @@ fn setup(
 
 fn animate_sprite(
     time: Res<Time>,
-    mut query: Query<(&mut AnimationTimer, &mut AtlasSprite3dComponent)>,
+    mut query: Query<(&mut AnimationTimer, &mut TextureAtlas, &TextureAtlas3dData)>,
 ) {
-    for (mut timer, mut sprite) in query.iter_mut() {
+    for (mut timer, mut atlas, data) in query.iter_mut() {
         timer.tick(time.delta());
         if timer.just_finished() {
-            sprite.index = (sprite.index + 1) % sprite.atlas.len();
+            atlas.index = (atlas.index + 1) % data.keys.len();
         }
     }
 }

@@ -13,7 +13,7 @@ fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
         .add_plugins(Sprite3dPlugin)
-        .add_state::<GameState>()
+        .init_state::<GameState>()
 
         // initially load assets
         .add_systems( Startup, |asset_server: Res<AssetServer>, mut assets: ResMut<Assets>| {

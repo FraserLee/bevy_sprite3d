@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use bevy::render::{ mesh::*, render_resource::* };
+use bevy::render::{ mesh::*, render_resource::*, render_asset::RenderAssetUsages};
 use std::hash::Hash;
 use std::collections::HashMap;
 
@@ -21,11 +21,11 @@ use bevy::ecs::system::SystemParam;
 // everything needed to register a sprite, passed in one go.
 #[derive(SystemParam)]
 pub struct Sprite3dParams<'w, 's> {
-    pub meshes    : ResMut<'w, Assets<Mesh>>,
-    pub materials : ResMut<'w, Assets<StandardMaterial>>,
-    pub images    : ResMut<'w, Assets<Image>>,
-    pub atlases   : ResMut<'w, Assets<TextureAtlas>>,
-    pub sr        : ResMut<'w, Sprite3dRes>,
+    pub meshes        : ResMut<'w, Assets<Mesh>>,
+    pub materials     : ResMut<'w, Assets<StandardMaterial>>,
+    pub images        : ResMut<'w, Assets<Image>>,
+    pub atlas_layouts : ResMut<'w, Assets<TextureAtlasLayout>>,
+    pub sr            : ResMut<'w, Sprite3dRes>,
     #[system_param(ignore)]
     marker: PhantomData<&'s usize>,
 }
@@ -89,14 +89,17 @@ impl Default for Sprite3dRes {
 
 
 
-// Update the mesh of any AtlasSprite3d when its index changes.
+// Update the mesh of a Sprite3d + AtlasSprite when its index changes.
 fn sprite3d_system(
     sprite_params: Sprite3dParams,
-    mut query: Query<(&mut Handle<Mesh>, &AtlasSprite3dComponent), Changed<AtlasSprite3dComponent>>,
+    mut query: Query<
+        (&mut Handle<Mesh>, &TextureAtlas, &TextureAtlas3dData),
+        (With<Sprite3dComponent>, Changed<TextureAtlas>),
+    >,
 ) {
-    for (mut mesh, params) in query.iter_mut() {
+    for (mut mesh, atlas, data) in query.iter_mut() {
         // this unwrap will always succeed, unless mesh_cache is corrupted.
-        *mesh = sprite_params.sr.mesh_cache.get(&params.atlas[params.index]).unwrap().clone();
+        *mesh = sprite_params.sr.mesh_cache.get(&data.keys[atlas.index]).unwrap().clone();
     }
 }
 
@@ -110,7 +113,14 @@ fn sprite3d_system(
 fn quad(w: f32, h: f32, pivot: Option<Vec2>, double_sided: bool) -> Mesh {
     let w2 = w / 2.0;
     let h2 = h / 2.0;
-    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
+
+    // Set RenderAssetUsages to the default value. Maybe allow customization or
+    // choose a better default?
+    let mut mesh = Mesh::new(
+        PrimitiveTopology::TriangleList,
+        RenderAssetUsages::default(),
+    );
+
     let vertices = match pivot {
         None => { vec![[-w2, -h2, 0.0], [w2, -h2, 0.0], [-w2, h2, 0.0], [w2, h2, 0.0],
                        [-w2, -h2, 0.0], [w2, -h2, 0.0], [-w2, h2, 0.0], [w2, h2, 0.0]] },
@@ -130,10 +140,10 @@ fn quad(w: f32, h: f32, pivot: Option<Vec2>, double_sided: bool) -> Mesh {
     mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, vec![[0.0, 1.0], [1.0, 1.0], [0.0, 0.0], [1.0, 0.0],
                                                      [0.0, 1.0], [1.0, 1.0], [0.0, 0.0], [1.0, 0.0]]);
 
-    mesh.set_indices(Some(Indices::U32(
+    mesh.insert_indices(Indices::U32(
         if double_sided { vec![0, 1, 2, 1, 3, 2, 5, 4, 6, 7, 5, 6] }
         else {            vec![0, 1, 2, 1, 3, 2] }
-    )));
+    ));
 
     mesh
 }
@@ -222,7 +232,13 @@ impl Default for Sprite3d {
 
 // just a marker for queries at the moment, could be expanded later if needed.
 #[derive(Component)]
-pub struct Sprite3dComponent { }
+pub struct Sprite3dComponent {}
+
+// Stores mesh keys since the previous AtlasSprite3dComponent was removed.
+#[derive(Component)]
+pub struct TextureAtlas3dData {
+    pub keys: Vec<[u32; 9]>,
+}
 
 #[derive(Bundle)]
 pub struct Sprite3dBundle {
@@ -230,8 +246,15 @@ pub struct Sprite3dBundle {
     pub pbr: PbrBundle,
 }
 
-impl Sprite3d {
+#[derive(Bundle)]
+pub struct AtlasSprite3dBundle {
+    pub params: Sprite3dComponent,
+    pub data: TextureAtlas3dData,
+    pub pbr: PbrBundle,
+    pub atlas: TextureAtlas,
+}
 
+impl Sprite3d {
     /// creates a bundle of components from the Sprite3d struct.
     pub fn bundle(self, params: &mut Sprite3dParams ) -> Sprite3dBundle {
         // get image dimensions
@@ -240,9 +263,8 @@ impl Sprite3d {
         let w = (image_size.width  as f32) / self.pixels_per_metre;
         let h = (image_size.height as f32) / self.pixels_per_metre;
 
-
         return Sprite3dBundle {
-            params: Sprite3dComponent { },
+            params: Sprite3dComponent {},
             pbr: PbrBundle {
                 mesh: {
                     let pivot = self.pivot.unwrap_or(Vec2::new(0.5, 0.5));
@@ -290,100 +312,15 @@ impl Sprite3d {
             }
         }
     }
-}
 
-
-
-
-
-
-
-
-
-/// Same as Sprite3d, but for sprites in a texture atlas.
-///
-/// A precursor struct for a sprite. Set necessary parameters manually, use
-/// `..default()` for others, then call `bundle()` to to get a `PBRBundle`
-/// that can be spawned into the world.
-pub struct AtlasSprite3d {
-    /// the sprite's transform
-    pub transform: Transform,
-    /// the sprite texture atlas. See `readme.md` for examples.
-    pub atlas: Handle<TextureAtlas>,
-    /// the sprite's index in the atlas.
-    pub index: usize,
-
-    /// the number of pixels per metre of the sprite, assuming a `Transform::scale` of 1.0.
-    pub pixels_per_metre: f32,
-
-    /// The sprite's pivot. eg. the point specified by the sprite's
-    /// transform, around which a rotation will be performed.
-    ///
-    /// - pivot = None will have a center pivot
-    /// - pivot = Some(p) will have an expected range of p \in `(0,0)` to `(1,1)`
-    ///   (though you can go out of bounds without issue)
-    pub pivot: Option<Vec2>,
-
-    /// The sprite's alpha mode.
-    ///
-    /// - `Mask(0.5)` (default) only allows fully opaque or fully transparent pixels
-    ///   (cutoff at `0.5`).
-    /// - `Blend` allows partially transparent pixels (slightly more expensive).
-    /// - Use any other value to achieve desired blending effect.
-    pub alpha_mode: AlphaMode,
-
-    /// Whether the sprite should be rendered as unlit.
-    /// `false` (default) allows for lighting.
-    pub unlit: bool,
-
-    /// Whether the sprite should be rendered as double-sided.
-    /// `true` (default) adds a second set of indices, describing the same tris
-    /// in reverse order.
-    pub double_sided: bool,
-
-    /// An emissive colour, if the sprite should emit light.
-    /// `Color::Black` (default) does nothing.
-    pub emissive: Color,
-}
-
-impl Default for AtlasSprite3d {
-    fn default() -> AtlasSprite3d {
-        AtlasSprite3d {
-            transform: Transform::default(),
-            atlas: Handle::<TextureAtlas>::default(),
-            index: 0,
-            pixels_per_metre: 100.,
-            pivot: None,
-            alpha_mode: DEFAULT_ALPHA_MODE,
-            unlit: false,
-            double_sided: true,
-            emissive: Color::BLACK,
-        }
-    }
-}
-
-
-
-#[derive(Component)]
-pub struct AtlasSprite3dComponent {
-    pub index: usize,
-    pub atlas: Vec<[u32; 9]>,
-}
-
-#[derive(Bundle)]
-pub struct AtlasSprite3dBundle {
-    pub params: AtlasSprite3dComponent,
-    pub pbr: PbrBundle,
-}
-
-
-
-
-impl AtlasSprite3d {
     /// creates a bundle of components from the AtlasSprite3d struct.
-    pub fn bundle(self, params: &mut Sprite3dParams ) -> AtlasSprite3dBundle {
-        let atlas = params.atlases.get(&self.atlas).unwrap();
-        let image = params.images.get(&atlas.texture).unwrap();
+    pub fn bundle_with_atlas(
+        self,
+        params: &mut Sprite3dParams,
+        atlas: TextureAtlas,
+    ) -> AtlasSprite3dBundle {
+        let atlas_layout = params.atlas_layouts.get(&atlas.layout).unwrap();
+        let image = params.images.get(&self.image).unwrap();
         let image_size = image.texture_descriptor.size;
 
         let pivot = self.pivot.unwrap_or(Vec2::new(0.5, 0.5));
@@ -394,9 +331,9 @@ impl AtlasSprite3d {
         let mut mesh_keys = Vec::new();
 
 
-        for i in 0..atlas.textures.len() {
+        for i in 0..atlas_layout.textures.len() {
 
-            let rect = atlas.textures[i];
+            let rect = atlas_layout.textures[i];
 
             let w = rect.width() / self.pixels_per_metre;
             let h = rect.height() / self.pixels_per_metre;
@@ -450,17 +387,17 @@ impl AtlasSprite3d {
 
         return AtlasSprite3dBundle {
             pbr: PbrBundle {
-                mesh: params.sr.mesh_cache.get(&mesh_keys[self.index]).unwrap().clone(),
+                mesh: params.sr.mesh_cache.get(&mesh_keys[atlas.index]).unwrap().clone(),
                 material: {
                     let mat_key = MatKey {
-                        image: atlas.texture.clone(),
+                        image: self.image.clone(),
                         alpha_mode: HashableAlphaMode(self.alpha_mode),
                         unlit: self.unlit,
                         emissive: reduce_colour(self.emissive),
                     };
                     if let Some(material) = params.sr.material_cache.get(&mat_key) { material.clone() }
                     else {
-                        let material = params.materials.add(material(atlas.texture.clone(), self.alpha_mode, self.unlit, self.emissive));
+                        let material = params.materials.add(material(self.image.clone(), self.alpha_mode, self.unlit, self.emissive));
                         params.sr.material_cache.insert(mat_key, material.clone());
                         material
                     }
@@ -469,10 +406,11 @@ impl AtlasSprite3d {
                 transform: self.transform,
                 ..default()
             },
-            params: AtlasSprite3dComponent {
-                index: self.index,
-                atlas: mesh_keys,
+            params: Sprite3dComponent {},
+            data: TextureAtlas3dData {
+                keys: mesh_keys,
             },
+            atlas,
         }
     }
 }
