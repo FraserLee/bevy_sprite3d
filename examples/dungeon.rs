@@ -388,7 +388,7 @@ fn spawn_sprites(
     ));
     commands.spawn(PointLightBundle {
         point_light: PointLight {
-            intensity: 300.0,
+            intensity: 500_000.0,
             color: Color::rgb(1.0, 231./255., 221./255.),
             shadows_enabled: true,
             ..default()
@@ -416,7 +416,7 @@ fn spawn_sprites(
     ));
     commands.spawn(PointLightBundle {
         point_light: PointLight {
-            intensity: 100.0,
+            intensity: 70_000.0,
             color: Color::rgb(91./255., 1.0, 92./255.),
             shadows_enabled: true,
             ..default()
