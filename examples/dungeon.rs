@@ -2,7 +2,6 @@ use bevy::{prelude::*, window::WindowResolution};
 use bevy::asset::LoadState;
 use bevy::core_pipeline::bloom::BloomSettings;
 use bevy::core_pipeline::tonemapping::Tonemapping;
-use bevy::render::camera::PerspectiveProjection;
 use bevy::utils::Duration;
 use bevy::pbr::ScreenSpaceAmbientOcclusionBundle;
 use bevy::core_pipeline::experimental::taa::TemporalAntiAliasBundle;
