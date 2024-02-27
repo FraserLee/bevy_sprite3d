@@ -103,7 +103,7 @@ ratio) in constructing the 3d mesh. Examples show how to do this with Bevy's
 | 2.7                     | 0.12           |
 | 2.5 - 2.6               | 0.11           |
 | 2.4                     | 0.10           |
-| 2.1 - 2.4               | 0.9            |
+| 2.1 - 2.3               | 0.9            |
 | 1.1 - 2.0               | 0.8            |
 | 1.0                     | 0.7            |
 
