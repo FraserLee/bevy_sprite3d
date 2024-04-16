@@ -1,83 +1,54 @@
-use bevy::{prelude::*, window::WindowResolution};
-use bevy::asset::LoadState;
-use bevy::core_pipeline::bloom::BloomSettings;
-use bevy::core_pipeline::tonemapping::Tonemapping;
-use bevy::utils::Duration;
-use bevy::pbr::ScreenSpaceAmbientOcclusionBundle;
-use bevy::core_pipeline::experimental::taa::TemporalAntiAliasBundle;
-
+use bevy::{
+    asset::LoadState,
+    core_pipeline::{
+        bloom::BloomSettings,
+        experimental::taa::TemporalAntiAliasBundle,
+        tonemapping::Tonemapping,
+    },
+    pbr::ScreenSpaceAmbientOcclusionBundle,
+    prelude::*,
+    utils::Duration,
+    window::WindowResolution,
+};
 use bevy_sprite3d::*;
-
 use rand::{prelude::SliceRandom, Rng};
 
 #[derive(States, Hash, Clone, PartialEq, Eq, Debug, Default)]
-enum GameState { #[default] Loading, Ready }
+enum GameState {
+    #[default]
+    Loading,
+    Ready,
+}
 
-// #[derive(AssetCollection, Resource)]
-// struct ImageAssets {
-//     #[asset(texture_atlas(tile_size_x = 16., tile_size_y = 16.,
-//             columns = 30, rows = 35, padding_x = 10., padding_y = 10.,
-//             offset_x = 5., offset_y = 5.))]
-//     #[asset(path = "dungeon/tileset_padded.png")]
-//     tileset: Handle<TextureAtlas>,
-// }
 #[derive(Resource, Default)]
 struct ImageAssets {
     image: Handle<Image>,
     layout: Handle<TextureAtlasLayout>,
 }
 
-
 fn main() {
-
     App::new()
+        .insert_resource(Msaa::Off)
+        .insert_resource(ImageAssets::default())
         .add_plugins(DefaultPlugins
             .set(ImagePlugin::default_nearest())
             .set(WindowPlugin {
                 primary_window: Some( Window{
-                    resolution: WindowResolution::new(1080.0, 1080.0 * 3./4.),
+                    resolution: WindowResolution::new(1080.0, 1080.0 * 0.75),
                     ..default()
                 }), ..default()
-            }))
-        .insert_resource(Msaa::Off)
+            })
+        )
         .add_plugins(Sprite3dPlugin)
         .init_state::<GameState>()
-
-        // initially load assets
-        .add_systems(Startup, |asset_server: Res<AssetServer>,
-                               mut assets:   ResMut<ImageAssets>,
-                               mut layouts:  ResMut<Assets<TextureAtlasLayout>>| {
-
-            assets.image = asset_server.load("dungeon/tileset_padded.png");
-
-            assets.layout = layouts.add(
-                TextureAtlasLayout::from_grid(
-                                        Vec2::new(16.0, 16.0),
-                                        30,
-                                        35,
-                                        Some(Vec2::new(10., 10.)),
-                                        Some(Vec2::new(5., 5.)))
-            );
-        })
-
-        // every frame check if assets are loaded. Once they are, we can proceed with setup.
-        .add_systems(Update, (
-                       |asset_server   : Res<AssetServer>,
-                        assets         : Res<ImageAssets>,
-                        mut next_state : ResMut<NextState<GameState>>| {
-
-            if asset_server.get_load_state(assets.image.clone()) == Some(LoadState::Loaded) {
-                next_state.set(GameState::Ready);
-            }
-        }).run_if(in_state(GameState::Loading)) )
-        .add_systems( OnEnter(GameState::Ready), setup )
-        .add_systems( OnEnter(GameState::Ready), spawn_sprites )
-        .add_systems( Update, animate_camera.run_if(in_state(GameState::Ready)) )
-        .add_systems( Update, animate_sprites.run_if(in_state(GameState::Ready)) )
-        .add_systems( Update, face_camera.run_if(in_state(GameState::Ready)) )
-        .insert_resource(ImageAssets::default())
+        .add_systems(Startup, load_assets)
+        .add_systems(Update, check_asset_loading.run_if(in_state(GameState::Loading)) )
+        .add_systems(OnEnter(GameState::Ready), setup)
+        .add_systems(OnEnter(GameState::Ready), spawn_sprites)
+        .add_systems(Update, animate_camera.run_if(in_state(GameState::Ready)))
+        .add_systems(Update, animate_sprites.run_if(in_state(GameState::Ready)))
+        .add_systems(Update, face_camera.run_if(in_state(GameState::Ready)))
         .run();
-
 }
 
 #[derive(Component)]
@@ -88,6 +59,35 @@ struct Animation {
     frames: Vec<usize>, // indices of all the frames in the animation
     current: usize,
     timer: Timer,
+}
+
+// initially load assets
+fn load_assets(
+    asset_server: Res<AssetServer>,
+    mut assets: ResMut<ImageAssets>,
+    mut layouts: ResMut<Assets<TextureAtlasLayout>>,
+) {
+    assets.image = asset_server.load("dungeon/tileset_padded.png");
+    assets.layout = layouts.add(
+        TextureAtlasLayout::from_grid(
+            Vec2::new(16.0, 16.0),
+            30,
+            35,
+            Some(Vec2::new(10., 10.)),
+            Some(Vec2::new(5., 5.))
+        )
+    );
+}
+
+// every frame check if assets are loaded. Once they are, we can proceed with setup.
+fn check_asset_loading(
+    asset_server   : Res<AssetServer>,
+    assets         : Res<ImageAssets>,
+    mut next_state : ResMut<NextState<GameState>>
+) {
+    if asset_server.get_load_state(assets.image.clone()) == Some(LoadState::Loaded) {
+        next_state.set(GameState::Ready);
+    }
 }
 
 fn setup(
@@ -102,6 +102,7 @@ fn setup(
         transform: Transform::from_xyz(-0.9, 0.5, -3.1),
         ..default()
     });
+
     // sphere
     commands.spawn(PbrBundle {
         mesh: meshes.add(Sphere::new(0.6)),
@@ -111,7 +112,8 @@ fn setup(
     });
 
     // camera
-    commands.spawn((Camera3dBundle {
+    commands.spawn((
+        Camera3dBundle {
             camera: Camera {
                 hdr: true,
                 clear_color: ClearColorConfig::Custom(Color::rgb(1.0, 1.0, 1.0) * 0.0),
@@ -139,25 +141,22 @@ fn spawn_sprites(
     images: Res<ImageAssets>,
     mut sprite_params: Sprite3dParams,
 ) {
-    // ------------------ Tilemap for the floor ------------------
-
+    // Floor Tilemap
+    //
     // we first set up a few closures to help generate variations of tiles
-
     // random floor tile
     let options_f = [(7,0), (7,0), (7,0), (9,1), (9,2), (9,3), (9,4)];
-    let f = || { options_f.choose(&mut rand::thread_rng()).unwrap().clone() };
-
+    let f = || *options_f.choose(&mut rand::thread_rng()).unwrap();
     let options_d = [(9,9), (9,10), (9,11)]; // random darker floor tile
-    let d = || { options_d.choose(&mut rand::thread_rng()).unwrap().clone() };
-
+    let d = || *options_d.choose(&mut rand::thread_rng()).unwrap();
     let options_l = [(7,5), (7,6), (7,7)]; // left wall tile
-    let l = || { options_l.choose(&mut rand::thread_rng()).unwrap().clone() };
+    let l = || *options_l.choose(&mut rand::thread_rng()).unwrap();
     let options_t = [(7,8), (7,9), (7,10)]; // top wall tile
-    let t = || { options_t.choose(&mut rand::thread_rng()).unwrap().clone() };
+    let t = || *options_t.choose(&mut rand::thread_rng()).unwrap();
     let options_b = [(7,11), (7,12), (7,13)]; // bottom wall tile
-    let b = || { options_b.choose(&mut rand::thread_rng()).unwrap().clone() };
+    let b = || *options_b.choose(&mut rand::thread_rng()).unwrap();
     let options_r = [(7,14), (7,15), (7,16)]; // right wall tile
-    let r = || { options_r.choose(&mut rand::thread_rng()).unwrap().clone() };
+    let r = || *options_r.choose(&mut rand::thread_rng()).unwrap();
 
     let tl = || { (7,1) }; // top left corner
     let tr = || { (7,2) }; // top right corner
@@ -165,12 +164,11 @@ fn spawn_sprites(
     let br = || { (7,4) }; // bottom right corner
 
     let options_tb = [(7,21), (7,22)]; // top and bottom wall tile
-    let tb = || { options_tb.choose(&mut rand::thread_rng()).unwrap().clone() };
+    let tb = || *options_tb.choose(&mut rand::thread_rng()).unwrap();
 
     // in reality, you'd probably want to import a map generated by an
     // external tool, or maybe proc-gen it yourself. For this example, a
     // 2d array should suffice.
-
     let mut map = vec![
         vec![(0,0), (0,0), (0,0), (0,0), (0,0), tl(),  t(),   d(),   d(),   d(),   t(),   tr() ],
         vec![(0,0), (0,0), (0,0), (0,0), (0,0), l(),   f(),   f(),   f(),   f(),   f(),   r()  ],
@@ -194,6 +192,7 @@ fn spawn_sprites(
     // add zero padding to the map
     map.insert(0, vec![(0,0); map[0].len()]);
     map.push(vec![(0,0); map[0].len()]);
+
     for row in map.iter_mut() {
         row.insert(0, (0,0));
         row.push((0,0));
@@ -202,7 +201,6 @@ fn spawn_sprites(
     // might be nice to add built-in support for sprite-merging for tilemaps...
     // though since all the meshes and materials are already cached and reused,
     // I wonder how much of a speedup that'd actually be. Food for thought.
-
     for y in 0..map.len() {
         for x in 0..map[y].len() {
             let index = map[y][x].0 * 30 + map[y][x].1;
@@ -214,21 +212,22 @@ fn spawn_sprites(
                 index: index as usize,
             };
 
-            commands.spawn(Sprite3d {
+            commands.spawn(
+                Sprite3d {
                     image: images.image.clone(),
                     pixels_per_metre: 16.,
                     double_sided: false,
                     transform: Transform::from_xyz(x, 0.0, y).with_rotation(Quat::from_rotation_x(-std::f32::consts::PI / 2.0)),
                     ..default()
-            }.bundle_with_atlas(&mut sprite_params, atlas));
+                }.bundle_with_atlas(&mut sprite_params, atlas),
+            );
         }
     }
 
-    // --------------------------- add some walls -------------------------
-
+    // Generate Walls
+    //
     // first horizontally, then vertically, scan along the map. If we find
     // a point transitioning from (0,0) to something else, add a wall there.
-
     let mut rng = rand::thread_rng();
 
     // quick closure to get a random wall tile, avoiding staircases right next
@@ -246,12 +245,15 @@ fn spawn_sprites(
 
     for y in 1..(map.len() - 1) {
         for x in 0..(map[y].len() - 1) {
-            if (map[y][x] != (0,0)) ^ (map[y][x+1] == (0,0)) { continue; }
+            if (map[y][x] != (0,0)) ^ (map[y][x+1] == (0,0)) {
+                continue;
+            }
             let dir = if map[y][x] == (0,0) { 1.0 } else { -1.0 };
 
             let mut tile_x = wall_index();
 
-            if map[y][x] == (0,0) { // literal corner cases. hah.
+            if map[y][x] == (0,0) {
+                // literal corner cases. hah.
                 if map[y+1][x+1] == (0,0) { tile_x = 0; }
                 if map[y-1][x+1] == (0,0) { tile_x = 5; }
             } else {
@@ -267,7 +269,8 @@ fn spawn_sprites(
                     index: (tile_x + (5 - i) * 30) as usize,
                 };
                 
-                commands.spawn(Sprite3d {
+                commands.spawn(
+                    Sprite3d {
                         image: images.image.clone(),
                         pixels_per_metre: 16.,
                         double_sided: false,
@@ -275,7 +278,8 @@ fn spawn_sprites(
                             .with_rotation(Quat::from_rotation_y(
                                 dir * std::f32::consts::PI / 2.0)),
                         ..default()
-                }.bundle_with_atlas(&mut sprite_params, atlas));
+                    }.bundle_with_atlas(&mut sprite_params, atlas),
+                );
             }
         }
     }
@@ -283,7 +287,9 @@ fn spawn_sprites(
     // same thing again, but for the vertical walls
     for x in 1..(map[0].len() - 1) {
         for y in 0..(map.len() - 1) {
-            if (map[y][x] != (0,0)) ^ (map[y+1][x] == (0,0)) { continue; }
+            if (map[y][x] != (0,0)) ^ (map[y+1][x] == (0,0)) {
+                continue;
+            }
             let dir = if map[y][x] == (0,0) { 1.0 } else { -1.0 };
 
             let mut tile_x = wall_index();
@@ -304,7 +310,8 @@ fn spawn_sprites(
                     index: (tile_x + (5 - i) * 30) as usize,
                 };
 
-                commands.spawn(Sprite3d {
+                commands.spawn(
+                    Sprite3d {
                         image: images.image.clone(),
                         pixels_per_metre: 16.,
                         double_sided: false,
@@ -312,13 +319,13 @@ fn spawn_sprites(
                             .with_rotation(Quat::from_rotation_y(
                                     (dir - 1.0) * std::f32::consts::PI / 2.0)),
                         ..default()
-                }.bundle_with_atlas(&mut sprite_params, atlas));
+                    }.bundle_with_atlas(&mut sprite_params, atlas),
+                );
             }
         }
     }
 
-    // --------------------- characters, enemies, props ---------------------
-
+    // Characters, enemies, props
     let mut entity = |(x, y), tile_x, tile_y, height, frames| {
         let mut timer = Timer::from_seconds(0.4, TimerMode::Repeating);
         timer.set_elapsed(Duration::from_secs_f32(rng.gen_range(0.0..0.4)));
@@ -326,21 +333,22 @@ fn spawn_sprites(
         for i in 0usize..height {
             let atlas = TextureAtlas {
                 layout: images.layout.clone(),
-                index: (tile_x + (tile_y - i) * 30) as usize,
+                index: tile_x + (tile_y - i) * 30,
             };
 
-            let mut c = commands.spawn((Sprite3d {
+            let mut c = commands.spawn((
+                Sprite3d {
                     image: images.image.clone(),
                     pixels_per_metre: 16.,
                     transform: Transform::from_xyz(x as f32, i as f32 + 0.498, y),
                     ..default()
                 }.bundle_with_atlas(&mut sprite_params, atlas),
-                FaceCamera {},
+                FaceCamera,
             ));
 
             if frames > 1 {
                 c.insert(Animation {
-                    frames: (0..frames).map(|j| j + tile_x + (tile_y - i) * 30 as usize).collect(),
+                    frames: (0..frames).map(|j| j + tile_x + (tile_y - i) * 30_usize).collect(),
                     current: 0,
                     timer: timer.clone(),
                 });
@@ -369,7 +377,8 @@ fn spawn_sprites(
         index: 30*32 + 14,
     };
 
-    commands.spawn((Sprite3d {
+    commands.spawn((
+        Sprite3d {
             image: images.image.clone(),
             pixels_per_metre: 16.,
             transform: Transform::from_xyz(2.0, 0.5, -5.5),
@@ -377,14 +386,12 @@ fn spawn_sprites(
             unlit: true,
             ..default()
         }.bundle_with_atlas(&mut sprite_params, atlas),
-
         Animation {
             frames: vec![30*32 + 14, 30*32 + 15, 30*32 + 16],
             current: 0,
             timer: Timer::from_seconds(0.2, TimerMode::Repeating),
         },
-
-        FaceCamera {}
+        FaceCamera,
     ));
     commands.spawn(PointLightBundle {
         point_light: PointLight {
@@ -403,7 +410,8 @@ fn spawn_sprites(
         index: 22*30 + 22,
     };
 
-    commands.spawn((Sprite3d {
+    commands.spawn((
+        Sprite3d {
             image: images.image.clone(),
             pixels_per_metre: 16.,
             transform: Transform::from_xyz(-5., 0.7, 6.5),
@@ -411,9 +419,9 @@ fn spawn_sprites(
             unlit: true,
             ..default()
         }.bundle_with_atlas(&mut sprite_params, atlas),
-
         FaceCamera {}
     ));
+
     commands.spawn(PointLightBundle {
         point_light: PointLight {
             intensity: 70_000.0,
@@ -424,8 +432,6 @@ fn spawn_sprites(
         transform: Transform::from_xyz(-5., 1.1, 6.5),
         ..default()
     });
-
-
 }
 
 // parameters for how the camera orbits the area
@@ -450,7 +456,6 @@ fn animate_camera(
     transform.translation.z = time.cos() * CAM_DISTANCE;
     transform.look_at(Vec3::new(CAM_TARGET_X, 0.0, CAM_TARGET_Z), Vec3::Y);
 }
-
 
 fn animate_sprites(
     time: Res<Time>,

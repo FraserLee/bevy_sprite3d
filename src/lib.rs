@@ -1,9 +1,16 @@
-use bevy::prelude::*;
-use bevy::render::{ mesh::*, render_resource::*, render_asset::RenderAssetUsages};
-use std::hash::Hash;
-use std::collections::HashMap;
+use bevy::{
+    prelude::*,
+    render::{mesh::*, render_resource::*, render_asset::RenderAssetUsages},
+    ecs::system::SystemParam,
+};
+use std::{
+    hash::Hash,
+    collections::HashMap,
+    marker::PhantomData,
+};
 
 pub struct Sprite3dPlugin;
+
 impl Plugin for Sprite3dPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Sprite3dRes>();
@@ -11,12 +18,8 @@ impl Plugin for Sprite3dPlugin {
     }
 }
 
-
 // sizes are multiplied by this, then cast to ints to query the mesh hashmap.
 const MESH_CACHE_GRANULARITY: f32 = 1000.;
-
-use std::marker::PhantomData;
-use bevy::ecs::system::SystemParam;
 
 // everything needed to register a sprite, passed in one go.
 #[derive(SystemParam)]
@@ -40,7 +43,7 @@ pub struct MatKey {
 
 const DEFAULT_ALPHA_MODE: AlphaMode = AlphaMode::Mask(0.5);
 
-#[derive(Eq, PartialEq)]
+#[derive(PartialEq, Eq)]
 struct HashableAlphaMode(AlphaMode);
 
 impl Hash for HashableAlphaMode {
@@ -59,35 +62,20 @@ impl Hash for HashableAlphaMode {
     }
 }
 
-
-fn reduce_colour(c: Color) -> [u8; 4] { [
+fn reduce_colour(c: Color) -> [u8; 4] {
+    [
         (c.r() * 255.) as u8,
         (c.g() * 255.) as u8,
         (c.b() * 255.) as u8,
         (c.a() * 255.) as u8,
-] }
+    ]
+}
 
-
-#[derive(Resource)]
+#[derive(Resource, Default)]
 pub struct Sprite3dRes {
     pub mesh_cache: HashMap<[u32; 9], Handle<Mesh>>,
     pub material_cache: HashMap<MatKey, Handle<StandardMaterial>>,
 }
-
-impl Default for Sprite3dRes {
-    fn default() -> Self {
-        Sprite3dRes {
-            mesh_cache: HashMap::new(),
-            material_cache: HashMap::new(),
-        }
-    }
-}
-
-
-
-
-
-
 
 // Update the mesh of a Sprite3d + AtlasSprite when its index changes.
 fn sprite3d_system(
@@ -102,9 +90,6 @@ fn sprite3d_system(
         *mesh = sprite_params.sr.mesh_cache.get(&data.keys[atlas.index]).unwrap().clone();
     }
 }
-
-
-
 
 // creates a (potentially offset) quad mesh facing +z
 // pivot = None will have a center pivot
@@ -122,34 +107,48 @@ fn quad(w: f32, h: f32, pivot: Option<Vec2>, double_sided: bool) -> Mesh {
     );
 
     let vertices = match pivot {
-        None => { vec![[-w2, -h2, 0.0], [w2, -h2, 0.0], [-w2, h2, 0.0], [w2, h2, 0.0],
-                       [-w2, -h2, 0.0], [w2, -h2, 0.0], [-w2, h2, 0.0], [w2, h2, 0.0]] },
+        None => {
+            vec![
+                [-w2, -h2, 0.0], [w2, -h2, 0.0], [-w2, h2, 0.0], [w2, h2, 0.0],
+                [-w2, -h2, 0.0], [w2, -h2, 0.0], [-w2, h2, 0.0], [w2, h2, 0.0],
+            ]
+        },
         Some(pivot) => {
             let px = pivot.x * w;
             let py = pivot.y * h;
-            vec![[-px, -py, 0.0], [w - px, -py, 0.0], [-px, h - py, 0.0], [w - px, h - py, 0.0],
-                 [-px, -py, 0.0], [w - px, -py, 0.0], [-px, h - py, 0.0], [w - px, h - py, 0.0]]
+            vec![
+                [-px, -py, 0.0], [w - px, -py, 0.0], [-px, h - py, 0.0], [w - px, h - py, 0.0],
+                [-px, -py, 0.0], [w - px, -py, 0.0], [-px, h - py, 0.0], [w - px, h - py, 0.0]
+            ]
         }
     };
 
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, vertices);
-
-    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, vec![[0.0, 0.0,  1.0], [0.0, 0.0,  1.0], [0.0, 0.0,  1.0], [0.0, 0.0,  1.0],
-                                                       [0.0, 0.0, -1.0], [0.0, 0.0, -1.0], [0.0, 0.0, -1.0], [0.0, 0.0, -1.0]]);
-
-    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, vec![[0.0, 1.0], [1.0, 1.0], [0.0, 0.0], [1.0, 0.0],
-                                                     [0.0, 1.0], [1.0, 1.0], [0.0, 0.0], [1.0, 0.0]]);
+    mesh.insert_attribute(
+        Mesh::ATTRIBUTE_NORMAL,
+        vec![
+            [0.0, 0.0,  1.0], [0.0, 0.0,  1.0], [0.0, 0.0,  1.0], [0.0, 0.0,  1.0],
+            [0.0, 0.0, -1.0], [0.0, 0.0, -1.0], [0.0, 0.0, -1.0], [0.0, 0.0, -1.0],
+        ],
+    );
+    mesh.insert_attribute(
+        Mesh::ATTRIBUTE_UV_0,
+        vec![
+            [0.0, 1.0], [1.0, 1.0], [0.0, 0.0], [1.0, 0.0],
+            [0.0, 1.0], [1.0, 1.0], [0.0, 0.0], [1.0, 0.0],
+        ],
+    );
 
     mesh.insert_indices(Indices::U32(
-        if double_sided { vec![0, 1, 2, 1, 3, 2, 5, 4, 6, 7, 5, 6] }
-        else {            vec![0, 1, 2, 1, 3, 2] }
+        if double_sided {
+            vec![0, 1, 2, 1, 3, 2, 5, 4, 6, 7, 5, 6]
+        } else {
+            vec![0, 1, 2, 1, 3, 2]
+        }
     ));
 
     mesh
 }
-
-
-
 
 // generate a StandardMaterial useful for rendering a sprite
 fn material(image: Handle<Image>, alpha_mode: AlphaMode, unlit: bool, emissive: Color) -> StandardMaterial {
@@ -161,13 +160,9 @@ fn material(image: Handle<Image>, alpha_mode: AlphaMode, unlit: bool, emissive: 
         perceptual_roughness: 0.5,
         reflectance: 0.15,
         emissive,
-
-        ..Default::default()
+        ..default()
     }
 }
-
-
-
 
 /// A precursor struct for a sprite. Set necessary parameters manually, use
 /// `..default()` for others, then call `bundle()` to to get a `PBRBundle`
@@ -175,15 +170,11 @@ fn material(image: Handle<Image>, alpha_mode: AlphaMode, unlit: bool, emissive: 
 pub struct Sprite3d {
     /// the sprite's transform
     pub transform: Transform,
-
     /// the sprite image. See `readme.md` for examples.
     pub image: Handle<Image>,
-
     // TODO: ability to specify exact size, with None scaled by image's ratio and other.
-
     /// the number of pixels per metre of the sprite, assuming a `Transform::scale` of 1.0.
     pub pixels_per_metre: f32,
-
     /// The sprite's pivot. eg. the point specified by the sprite's
     /// transform, around which a rotation will be performed.
     ///
@@ -191,7 +182,6 @@ pub struct Sprite3d {
     /// - pivot = Some(p) will have an expected range of p \in `(0,0)` to `(1,1)`
     ///   (though you can go out of bounds without issue)
     pub pivot: Option<Vec2>,
-
     /// The sprite's alpha mode.
     ///
     /// - `Mask(0.5)` (default) only allows fully opaque or fully transparent pixels
@@ -199,16 +189,13 @@ pub struct Sprite3d {
     /// - `Blend` allows partially transparent pixels (slightly more expensive).
     /// - Use any other value to achieve desired blending effect.
     pub alpha_mode: AlphaMode,
-
     /// Whether the sprite should be rendered as unlit.
     /// `false` (default) allows for lighting.
     pub unlit: bool,
-
     /// Whether the sprite should be rendered as double-sided.
     /// `true` (default) adds a second set of indices, describing the same tris
     /// in reverse order.
     pub double_sided: bool,
-
     /// An emissive colour, if the sprite should emit light.
     /// `Color::Black` (default) does nothing.
     pub emissive: Color,
@@ -228,7 +215,6 @@ impl Default for Sprite3d {
         }
     }
 }
-
 
 // just a marker for queries at the moment, could be expanded later if needed.
 #[derive(Component)]
@@ -268,26 +254,30 @@ impl Sprite3d {
             pbr: PbrBundle {
                 mesh: {
                     let pivot = self.pivot.unwrap_or(Vec2::new(0.5, 0.5));
+                    let mesh_key = [
+                        (w * MESH_CACHE_GRANULARITY) as u32,
+                        (h * MESH_CACHE_GRANULARITY) as u32,
+                        (pivot.x * MESH_CACHE_GRANULARITY) as u32,
+                        (pivot.y * MESH_CACHE_GRANULARITY) as u32,
+                        self.double_sided as u32,
+                        0, 0, 0, 0
+                    ];
 
-                    let mesh_key = [(w * MESH_CACHE_GRANULARITY) as u32,
-                                    (h * MESH_CACHE_GRANULARITY) as u32,
-                                    (pivot.x * MESH_CACHE_GRANULARITY) as u32,
-                                    (pivot.y * MESH_CACHE_GRANULARITY) as u32,
-                                    self.double_sided as u32,
-                                    0, 0, 0, 0
-                                    ];
-
-                    // if we have a mesh in the cache, use it.
-                    // (greatly reduces number of unique meshes for tilemaps, etc.)
-                    if let Some(mesh) = params.sr.mesh_cache.get(&mesh_key) { mesh.clone() }
-                    else { // otherwise, create a new mesh and cache it.
-                        let mesh = params.meshes.add(quad( w, h, self.pivot, self.double_sided ));
+                    if let Some(mesh) = params.sr.mesh_cache.get(&mesh_key) {
+                        // if we have a mesh in the cache, use it.
+                        // (greatly reduces number of unique meshes for tilemaps, etc.)
+                        mesh.clone()
+                    } else {
+                        // otherwise, create a new mesh and cache it.
+                        let mesh = params.meshes.add(quad(
+                            w, h,
+                            self.pivot,
+                            self.double_sided,
+                        ));
                         params.sr.mesh_cache.insert(mesh_key, mesh.clone());
                         mesh
                     }
                 },
-
-
                 // likewise for material, use the existing if the image is already cached.
                 // (possibly look into a bool in Sprite3d to manually disable caching for an individual sprite?)
                 material: {
@@ -298,16 +288,20 @@ impl Sprite3d {
                         emissive: reduce_colour(self.emissive),
                     };
 
-                    if let Some(material) = params.sr.material_cache.get(&mat_key) { material.clone() }
-                    else {
-                        let material = params.materials.add(material(self.image.clone(), self.alpha_mode, self.unlit, self.emissive));
+                    if let Some(material) = params.sr.material_cache.get(&mat_key) {
+                        material.clone()
+                    } else {
+                        let material = params.materials.add(material(
+                            self.image.clone(),
+                            self.alpha_mode,
+                            self.unlit,
+                            self.emissive,
+                        ));
                         params.sr.material_cache.insert(mat_key, material.clone());
                         material
                     }
                 },
-
                 transform: self.transform,
-
                 ..default()
             }
         }
@@ -322,53 +316,55 @@ impl Sprite3d {
         let atlas_layout = params.atlas_layouts.get(&atlas.layout).unwrap();
         let image = params.images.get(&self.image).unwrap();
         let image_size = image.texture_descriptor.size;
-
         let pivot = self.pivot.unwrap_or(Vec2::new(0.5, 0.5));
+
         // cache all the meshes for the atlas (if they haven't been already)
         // so that we can change the index later and not have to re-create the mesh.
-
+        //
         // store all lookup keys in a vec so we later know which meshes to retrieve.
         let mut mesh_keys = Vec::new();
 
-
         for i in 0..atlas_layout.textures.len() {
-
             let rect = atlas_layout.textures[i];
 
             let w = rect.width() / self.pixels_per_metre;
             let h = rect.height() / self.pixels_per_metre;
 
             let frac_rect = bevy::math::Rect {
-                min: Vec2::new(rect.min.x / (image_size.width as f32),
-                               rect.min.y / (image_size.height as f32)),
-
-                max: Vec2::new(rect.max.x / (image_size.width as f32),
-                               rect.max.y / (image_size.height as f32)),
+                min: Vec2::new(
+                    rect.min.x / (image_size.width as f32),
+                    rect.min.y / (image_size.height as f32),
+                ),
+                max: Vec2::new(
+                    rect.max.x / (image_size.width as f32),
+                    rect.max.y / (image_size.height as f32),
+                ),
             };
 
-            let mut rect_pivot = pivot.clone();
+            let mut rect_pivot = pivot;
 
             // scale pivot to be relative to the rect within the atlas.
             rect_pivot.x *= frac_rect.width();
             rect_pivot.y *= frac_rect.height();
             rect_pivot += frac_rect.min;
 
-
-            let mesh_key = [(w * MESH_CACHE_GRANULARITY) as u32,
-                            (h * MESH_CACHE_GRANULARITY) as u32,
-                            (rect_pivot.x * MESH_CACHE_GRANULARITY) as u32,
-                            (rect_pivot.y * MESH_CACHE_GRANULARITY) as u32,
-                            self.double_sided as u32,
-                            (frac_rect.min.x * MESH_CACHE_GRANULARITY) as u32,
-                            (frac_rect.min.y * MESH_CACHE_GRANULARITY) as u32,
-                            (frac_rect.max.x * MESH_CACHE_GRANULARITY) as u32,
-                            (frac_rect.max.y * MESH_CACHE_GRANULARITY) as u32];
+            let mesh_key = [
+                (w * MESH_CACHE_GRANULARITY) as u32,
+                (h * MESH_CACHE_GRANULARITY) as u32,
+                (rect_pivot.x * MESH_CACHE_GRANULARITY) as u32,
+                (rect_pivot.y * MESH_CACHE_GRANULARITY) as u32,
+                self.double_sided as u32,
+                (frac_rect.min.x * MESH_CACHE_GRANULARITY) as u32,
+                (frac_rect.min.y * MESH_CACHE_GRANULARITY) as u32,
+                (frac_rect.max.x * MESH_CACHE_GRANULARITY) as u32,
+                (frac_rect.max.y * MESH_CACHE_GRANULARITY) as u32,
+            ];
 
             mesh_keys.push(mesh_key);
 
             // if we don't have a mesh in the cache, create it.
-            if !params.sr.mesh_cache.contains_key(&mesh_key) {
-                let mut mesh = quad( w, h, Some(pivot), self.double_sided );
+            params.sr.mesh_cache.entry(mesh_key).or_insert_with(|| {
+                let mut mesh = quad(w, h, Some(pivot), self.double_sided);
                 mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, vec![
                     [frac_rect.min.x, frac_rect.max.y],
                     [frac_rect.max.x, frac_rect.max.y],
@@ -380,12 +376,11 @@ impl Sprite3d {
                     [frac_rect.min.x, frac_rect.min.y],
                     [frac_rect.max.x, frac_rect.min.y],
                 ]);
-                let mesh_h = params.meshes.add(mesh);
-                params.sr.mesh_cache.insert(mesh_key, mesh_h);
-            }
+                params.meshes.add(mesh)
+            });
         }
 
-        return AtlasSprite3dBundle {
+        AtlasSprite3dBundle {
             pbr: PbrBundle {
                 mesh: params.sr.mesh_cache.get(&mesh_keys[atlas.index]).unwrap().clone(),
                 material: {
@@ -395,14 +390,19 @@ impl Sprite3d {
                         unlit: self.unlit,
                         emissive: reduce_colour(self.emissive),
                     };
-                    if let Some(material) = params.sr.material_cache.get(&mat_key) { material.clone() }
-                    else {
-                        let material = params.materials.add(material(self.image.clone(), self.alpha_mode, self.unlit, self.emissive));
+                    if let Some(material) = params.sr.material_cache.get(&mat_key) {
+                        material.clone()
+                    } else {
+                        let material = params.materials.add(material(
+                            self.image.clone(),
+                            self.alpha_mode,
+                            self.unlit,
+                            self.emissive,
+                        ));
                         params.sr.material_cache.insert(mat_key, material.clone());
                         material
                     }
                 },
-
                 transform: self.transform,
                 ..default()
             },
