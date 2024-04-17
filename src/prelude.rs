@@ -5,4 +5,5 @@ pub use crate::{
     Sprite3dComponent,
     Sprite3dParams,
     Sprite3dPlugin,
+    TextureAtlas3dData,
 };
