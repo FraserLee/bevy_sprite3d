@@ -3,6 +3,8 @@ use bevy::render::{ mesh::*, render_resource::*, render_asset::RenderAssetUsages
 use std::hash::Hash;
 use std::collections::HashMap;
 
+pub mod prelude;
+
 pub struct Sprite3dPlugin;
 impl Plugin for Sprite3dPlugin {
     fn build(&self, app: &mut App) {
