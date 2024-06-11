@@ -60,7 +60,6 @@ impl Hash for HashableAlphaMode {
 }
 
 fn reduce_colour(c: LinearRgba) -> [u8; 4] {
-    let c = LinearRgba::from(c);
     [
         (c.red * 255.) as u8,
         (c.green * 255.) as u8,
@@ -69,19 +68,10 @@ fn reduce_colour(c: LinearRgba) -> [u8; 4] {
     ]
 }
 
-#[derive(Resource)]
+#[derive(Resource, Default)]
 pub struct Sprite3dRes {
     pub mesh_cache: HashMap<[u32; 9], Handle<Mesh>>,
     pub material_cache: HashMap<MatKey, Handle<StandardMaterial>>,
-}
-
-impl Default for Sprite3dRes {
-    fn default() -> Self {
-        Sprite3dRes {
-            mesh_cache: HashMap::new(),
-            material_cache: HashMap::new(),
-        }
-    }
 }
 
 // Update the mesh of a Sprite3d + AtlasSprite when its index changes.
@@ -399,7 +389,7 @@ impl Sprite3d {
                 ),
             };
 
-            let mut rect_pivot = pivot.clone();
+            let mut rect_pivot = pivot;
 
             // scale pivot to be relative to the rect within the atlas.
             rect_pivot.x *= frac_rect.width();
@@ -421,7 +411,9 @@ impl Sprite3d {
             mesh_keys.push(mesh_key);
 
             // if we don't have a mesh in the cache, create it.
-            if !params.sr.mesh_cache.contains_key(&mesh_key) {
+            if let std::collections::hash_map::Entry::Vacant(e) =
+                params.sr.mesh_cache.entry(mesh_key)
+            {
                 let mut mesh = quad(w, h, Some(pivot), self.double_sided);
                 mesh.insert_attribute(
                     Mesh::ATTRIBUTE_UV_0,
@@ -437,7 +429,7 @@ impl Sprite3d {
                     ],
                 );
                 let mesh_h = params.meshes.add(mesh);
-                params.sr.mesh_cache.insert(mesh_key, mesh_h);
+                e.insert(mesh_h);
             }
         }
 
