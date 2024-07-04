@@ -52,11 +52,11 @@ fn main() {
 
             assets.layout = layouts.add(
                 TextureAtlasLayout::from_grid(
-                                        Vec2::new(16.0, 16.0),
+                                        UVec2::new(16, 16),
                                         30,
                                         35,
-                                        Some(Vec2::new(10., 10.)),
-                                        Some(Vec2::new(5., 5.)))
+                                        Some(UVec2::new(10, 10)),
+                                        Some(UVec2::new(5, 5)))
             );
         })
 
@@ -66,7 +66,7 @@ fn main() {
                         assets         : Res<ImageAssets>,
                         mut next_state : ResMut<NextState<GameState>>| {
 
-            if asset_server.get_load_state(assets.image.clone()) == Some(LoadState::Loaded) {
+            if asset_server.get_load_state(assets.image.id()) == Some(LoadState::Loaded) {
                 next_state.set(GameState::Ready);
             }
         }).run_if(in_state(GameState::Loading)) )
@@ -114,7 +114,7 @@ fn setup(
     commands.spawn((Camera3dBundle {
             camera: Camera {
                 hdr: true,
-                clear_color: ClearColorConfig::Custom(Color::rgb(1.0, 1.0, 1.0) * 0.0),
+                clear_color: ClearColorConfig::Custom(Color::NONE),
                 ..default()
             },
             projection: bevy::prelude::Projection::Perspective(PerspectiveProjection {
@@ -373,7 +373,7 @@ fn spawn_sprites(
             image: images.image.clone(),
             pixels_per_metre: 16.,
             transform: Transform::from_xyz(2.0, 0.5, -5.5),
-            emissive: Color::rgb(1.0, 0.5, 0.0) * 10.0,
+            emissive: LinearRgba::rgb(1.0, 0.5, 0.0) * 10.0,
             unlit: true,
             ..default()
         }.bundle_with_atlas(&mut sprite_params, atlas),
@@ -389,7 +389,7 @@ fn spawn_sprites(
     commands.spawn(PointLightBundle {
         point_light: PointLight {
             intensity: 500_000.0,
-            color: Color::rgb(1.0, 231./255., 221./255.),
+            color: Color::srgb(1.0, 231./255., 221./255.),
             shadows_enabled: true,
             ..default()
         },
@@ -407,7 +407,7 @@ fn spawn_sprites(
             image: images.image.clone(),
             pixels_per_metre: 16.,
             transform: Transform::from_xyz(-5., 0.7, 6.5),
-            emissive: Color::rgb(165./255., 1.0, 160./255.),
+            emissive: LinearRgba::rgb(165./255., 1.0, 160./255.),
             unlit: true,
             ..default()
         }.bundle_with_atlas(&mut sprite_params, atlas),
@@ -417,7 +417,7 @@ fn spawn_sprites(
     commands.spawn(PointLightBundle {
         point_light: PointLight {
             intensity: 70_000.0,
-            color: Color::rgb(91./255., 1.0, 92./255.),
+            color: Color::srgb(91./255., 1.0, 92./255.),
             shadows_enabled: true,
             ..default()
         },

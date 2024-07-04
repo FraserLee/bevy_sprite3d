@@ -28,7 +28,7 @@ fn main() {
 
             assets.image = asset_server.load("gabe-idle-run.png");
             assets.layout = texture_atlases.add(
-                TextureAtlasLayout::from_grid(Vec2::new(24.0, 24.0), 7, 1, None, None)
+                TextureAtlasLayout::from_grid(UVec2::new(24, 24), 7, 1, None, None)
             );
         })
 
@@ -53,7 +53,7 @@ fn setup(
 ) {
 
     // poll every frame to check if assets are loaded. Once they are, we can proceed with setup.
-    if asset_server.get_load_state(assets.image.clone()) != Some(LoadState::Loaded) { return; }
+    if asset_server.get_load_state(assets.image.id()) != Some(LoadState::Loaded) { return; }
 
     next_state.set(GameState::Ready);
 
