@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use bevy::asset::LoadState;
-use bevy_sprite3d::*;
+use bevy_sprite3d::prelude::*;
 
 #[derive(States, Hash, Clone, PartialEq, Eq, Debug, Default)]
 enum GameState { #[default] Loading, Ready }
