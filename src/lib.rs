@@ -55,16 +55,17 @@ impl Hash for HashableAlphaMode {
             AlphaMode::Premultiplied => 3.hash(state),
             AlphaMode::Add => 4.hash(state),
             AlphaMode::Multiply => 5.hash(state),
+            AlphaMode::AlphaToCoverage => 6.hash(state),
         }
     }
 }
 
 
-fn reduce_colour(c: Color) -> [u8; 4] { [
-        (c.r() * 255.) as u8,
-        (c.g() * 255.) as u8,
-        (c.b() * 255.) as u8,
-        (c.a() * 255.) as u8,
+fn reduce_colour(c: LinearRgba) -> [u8; 4] { [
+        (c.red * 255.) as u8,
+        (c.green * 255.) as u8,
+        (c.blue * 255.) as u8,
+        (c.alpha * 255.) as u8,
 ] }
 
 
@@ -152,7 +153,7 @@ fn quad(w: f32, h: f32, pivot: Option<Vec2>, double_sided: bool) -> Mesh {
 
 
 // generate a StandardMaterial useful for rendering a sprite
-fn material(image: Handle<Image>, alpha_mode: AlphaMode, unlit: bool, emissive: Color) -> StandardMaterial {
+fn material(image: Handle<Image>, alpha_mode: AlphaMode, unlit: bool, emissive: LinearRgba) -> StandardMaterial {
     StandardMaterial {
         base_color_texture: Some(image),
         cull_mode: Some(Face::Back),
@@ -210,8 +211,8 @@ pub struct Sprite3d {
     pub double_sided: bool,
 
     /// An emissive colour, if the sprite should emit light.
-    /// `Color::Black` (default) does nothing.
-    pub emissive: Color,
+    /// `LinearRgba::Black` (default) does nothing.
+    pub emissive: LinearRgba,
 }
 
 impl Default for Sprite3d {
@@ -224,7 +225,7 @@ impl Default for Sprite3d {
             alpha_mode: DEFAULT_ALPHA_MODE,
             unlit: false,
             double_sided: true,
-            emissive: Color::BLACK,
+            emissive: LinearRgba::BLACK,
         }
     }
 }
@@ -335,15 +336,15 @@ impl Sprite3d {
 
             let rect = atlas_layout.textures[i];
 
-            let w = rect.width() / self.pixels_per_metre;
-            let h = rect.height() / self.pixels_per_metre;
+            let w = rect.width() as f32 / self.pixels_per_metre;
+            let h = rect.height() as f32 / self.pixels_per_metre;
 
             let frac_rect = bevy::math::Rect {
-                min: Vec2::new(rect.min.x / (image_size.width as f32),
-                               rect.min.y / (image_size.height as f32)),
+                min: Vec2::new(rect.min.x as f32 / (image_size.width as f32),
+                               rect.min.y as f32 / (image_size.height as f32)),
 
-                max: Vec2::new(rect.max.x / (image_size.width as f32),
-                               rect.max.y / (image_size.height as f32)),
+                max: Vec2::new(rect.max.x as f32 / (image_size.width as f32),
+                               rect.max.y as f32 / (image_size.height as f32)),
             };
 
             let mut rect_pivot = pivot.clone();
