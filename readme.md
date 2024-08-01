@@ -45,14 +45,14 @@ app.add_plugin(Sprite3dPlugin)
 and spawn sprites with
 ```rust
 fn setup(
-    mut commands: Commands, 
-    images: Res<ImageAssets>,
+    mut commands: Commands,
+    images: Res<ImageAssets>, // this is your custom resource populated with asset handles
     mut sprite_params: Sprite3dParams
 ) {
 
     // ----------------------- Single Static Sprite ----------------------------
 
-    commands.spawn_bundle(Sprite3d {
+    commands.spawn(Sprite3d {
             image: images.sprite.clone(),
 
             pixels_per_metre: 400.,
@@ -71,14 +71,17 @@ fn setup(
 
     // ------------------- Texture Atlas (Sprite Sheet) ------------------------
 
-    commands.spawn_bundle(AtlasSprite3d {
-            atlas: images.sprite_sheet.clone(),
+    let texture_atlas = TextureAtlas {
+        layout: images.layout.clone(),
+        index: 3,
+    };
+
+    commands.spawn(Sprite3d {
+            image: images.sprite_sheet.clone(),
 
             pixels_per_metre: 32.,
             partial_alpha: true,
             unlit: true,
-
-            index: 3,
 
             ..default()
 
@@ -86,7 +89,7 @@ fn setup(
             // pivot: Some(Vec2::new(0.5, 0.5)),
             // double_sided: true,
 
-    }.bundle(&mut sprite_params));
+    }.bundle_with_atlas(&mut sprite_params, texture_atlas));
 }
 ```
 
