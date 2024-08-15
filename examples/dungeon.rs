@@ -6,7 +6,7 @@ use bevy::utils::Duration;
 use bevy::pbr::ScreenSpaceAmbientOcclusionBundle;
 use bevy::core_pipeline::experimental::taa::TemporalAntiAliasBundle;
 
-use bevy_sprite3d::*;
+use bevy_sprite3d::prelude::*;
 
 use rand::{prelude::SliceRandom, Rng};
 
