@@ -1,6 +1,5 @@
 use bevy::prelude::*;
-use bevy::asset::LoadState;
-use bevy_sprite3d::{prelude::*, TextureAtlas3dData};
+use bevy_sprite3d::prelude::*;
 
 #[derive(States, Hash, Clone, PartialEq, Eq, Debug, Default)]
 enum GameState { #[default] Loading, Ready }
@@ -53,14 +52,12 @@ fn setup(
 ) {
 
     // poll every frame to check if assets are loaded. Once they are, we can proceed with setup.
-    if asset_server.get_load_state(assets.image.id()) != Some(LoadState::Loaded) { return; }
-
+    if !asset_server.get_load_state(assets.image.id()).is_some_and(|s| s.is_loaded()) { return; }
     next_state.set(GameState::Ready);
 
     // -----------------------------------------------------------------------
 
-    commands.spawn(Camera3dBundle::default())
-            .insert(Transform::from_xyz(0., 0., 5.));
+    commands.spawn(Camera3d::default()).insert(Transform::from_xyz(0., 0., 5.));
 
     // -------------------- Spawn a 3D atlas sprite --------------------------
 
@@ -69,14 +66,12 @@ fn setup(
         index: 3,
     };
 
-    commands.spawn(Sprite3d {
+    commands.spawn(Sprite3dBuilder {
             image: assets.image.clone(),
             pixels_per_metre: 32.,
             alpha_mode: AlphaMode::Blend,
             unlit: true,
-            // transform: Transform::from_xyz(0., 0., 0.),
             // pivot: Some(Vec2::new(0.5, 0.5)),
-
             ..default()
     }.bundle_with_atlas(&mut sprite_params, texture_atlas))
     .insert(AnimationTimer(Timer::from_seconds(0.1, TimerMode::Repeating)));
@@ -87,12 +82,14 @@ fn setup(
 
 fn animate_sprite(
     time: Res<Time>,
-    mut query: Query<(&mut AnimationTimer, &mut TextureAtlas, &TextureAtlas3dData)>,
+    mut query: Query<(&mut AnimationTimer, &mut Sprite3d)>,
 ) {
-    for (mut timer, mut atlas, data) in query.iter_mut() {
+    for (mut timer, mut sprite_3d) in query.iter_mut() {
         timer.tick(time.delta());
         if timer.just_finished() {
-            atlas.index = (atlas.index + 1) % data.keys.len();
+            let length = sprite_3d.texture_atlas_keys.as_ref().unwrap().len();
+            let atlas = sprite_3d.texture_atlas.as_mut().unwrap();
+            atlas.index = (atlas.index + 1) % length;
         }
     }
 }
