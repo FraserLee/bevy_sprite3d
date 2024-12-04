@@ -1,5 +1,4 @@
 use bevy::prelude::*;
-use bevy::asset::LoadState;
 use bevy_sprite3d::prelude::*;
 
 #[derive(States, Hash, Clone, PartialEq, Eq, Debug, Default)]
@@ -38,18 +37,17 @@ fn setup(
 ) {
 
     // poll every frame to check if assets are loaded. Once they are, we can proceed with setup.
-    if asset_server.get_load_state(assets.0.id()) != Some(LoadState::Loaded) { return; }
+    if !asset_server.get_load_state(assets.0.id()).is_some_and(|s| s.is_loaded()) { return; }
 
     next_state.set(GameState::Ready);
 
     // -----------------------------------------------------------------------
 
-    commands.spawn(Camera3dBundle::default())
-            .insert(Transform::from_xyz(0., 0., 5.));
+    commands.spawn(Camera3d::default()).insert(Transform::from_xyz(0., 0., 5.));
 
     // ----------------------- Spawn a 3D sprite -----------------------------
 
-    commands.spawn(Sprite3d {
+    commands.spawn(Sprite3dBuilder {
             image: assets.0.clone(),
 
             pixels_per_metre: 400.,
@@ -58,7 +56,6 @@ fn setup(
 
             unlit: true,
 
-            // transform: Transform::from_xyz(0., 0., 0.),
             // pivot: Some(Vec2::new(0.5, 0.5)),
 
             ..default()

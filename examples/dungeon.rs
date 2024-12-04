@@ -1,10 +1,9 @@
 use bevy::{prelude::*, window::WindowResolution};
-use bevy::asset::LoadState;
-use bevy::core_pipeline::bloom::BloomSettings;
+use bevy::core_pipeline::bloom::Bloom;
 use bevy::core_pipeline::tonemapping::Tonemapping;
 use bevy::utils::Duration;
-use bevy::pbr::ScreenSpaceAmbientOcclusionBundle;
-use bevy::core_pipeline::experimental::taa::TemporalAntiAliasBundle;
+use bevy::pbr::ScreenSpaceAmbientOcclusion;
+use bevy::core_pipeline::experimental::taa::TemporalAntiAliasing;
 
 use bevy_sprite3d::prelude::*;
 
@@ -39,7 +38,6 @@ fn main() {
                     ..default()
                 }), ..default()
             }))
-        .insert_resource(Msaa::Off)
         .add_plugins(Sprite3dPlugin)
         .init_state::<GameState>()
 
@@ -66,7 +64,7 @@ fn main() {
                         assets         : Res<ImageAssets>,
                         mut next_state : ResMut<NextState<GameState>>| {
 
-            if asset_server.get_load_state(assets.image.id()) == Some(LoadState::Loaded) {
+            if asset_server.get_load_state(assets.image.id()).is_some_and(|s| s.is_loaded()) {
                 next_state.set(GameState::Ready);
             }
         }).run_if(in_state(GameState::Loading)) )
@@ -96,40 +94,37 @@ fn setup(
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     // cube
-    commands.spawn(PbrBundle {
-        mesh: meshes.add(Mesh::from(Cuboid::from_size(Vec3::splat(1.0)))),
-        material: materials.add(Color::WHITE),
-        transform: Transform::from_xyz(-0.9, 0.5, -3.1),
-        ..default()
-    });
+    commands.spawn((
+        Mesh3d(meshes.add(Mesh::from(Cuboid::from_size(Vec3::splat(1.0))))),
+        MeshMaterial3d(materials.add(Color::WHITE)),
+        Transform::from_xyz(-0.9, 0.5, -3.1),
+    ));
     // sphere
-    commands.spawn(PbrBundle {
-        mesh: meshes.add(Sphere::new(0.6)),
-        material: materials.add(Color::WHITE),
-        transform: Transform::from_xyz(-0.9, 0.5, -4.2),
-        ..default()
-    });
+    commands.spawn((
+        Mesh3d(meshes.add(Sphere::new(0.6))),
+        MeshMaterial3d(materials.add(Color::WHITE)),
+        Transform::from_xyz(-0.9, 0.5, -4.2),
+    ));
 
     // camera
-    commands.spawn((Camera3dBundle {
-            camera: Camera {
-                hdr: true,
-                clear_color: ClearColorConfig::Custom(Color::NONE),
-                ..default()
-            },
-            projection: bevy::prelude::Projection::Perspective(PerspectiveProjection {
-                fov: std::f32::consts::PI / 6.0,
-                ..default()
-            }),
+    commands
+        .spawn(Camera3d::default())
+        .insert(Camera {
+            hdr: true,
+            clear_color: ClearColorConfig::Custom(Color::NONE),
             ..default()
-        },
-        BloomSettings {
+        })
+        .insert(Msaa::Off)
+        .insert(Bloom {
             intensity: 0.3,
             ..default()
-        },
-    ))
-    .insert(ScreenSpaceAmbientOcclusionBundle::default())
-    .insert(TemporalAntiAliasBundle::default());
+        })
+        .insert(bevy::prelude::Projection::Perspective(PerspectiveProjection {
+            fov: std::f32::consts::PI / 6.0,
+            ..default()
+        }))
+        .insert(ScreenSpaceAmbientOcclusion::default())
+        .insert(TemporalAntiAliasing::default());
 
     commands.spawn(Tonemapping::AcesFitted);
 }
@@ -145,19 +140,19 @@ fn spawn_sprites(
 
     // random floor tile
     let options_f = [(7,0), (7,0), (7,0), (9,1), (9,2), (9,3), (9,4)];
-    let f = || { options_f.choose(&mut rand::thread_rng()).unwrap().clone() };
+    let f = || { *options_f.choose(&mut rand::thread_rng()).unwrap() };
 
     let options_d = [(9,9), (9,10), (9,11)]; // random darker floor tile
-    let d = || { options_d.choose(&mut rand::thread_rng()).unwrap().clone() };
+    let d = || { *options_d.choose(&mut rand::thread_rng()).unwrap() };
 
     let options_l = [(7,5), (7,6), (7,7)]; // left wall tile
-    let l = || { options_l.choose(&mut rand::thread_rng()).unwrap().clone() };
+    let l = || { *options_l.choose(&mut rand::thread_rng()).unwrap() };
     let options_t = [(7,8), (7,9), (7,10)]; // top wall tile
-    let t = || { options_t.choose(&mut rand::thread_rng()).unwrap().clone() };
+    let t = || { *options_t.choose(&mut rand::thread_rng()).unwrap() };
     let options_b = [(7,11), (7,12), (7,13)]; // bottom wall tile
-    let b = || { options_b.choose(&mut rand::thread_rng()).unwrap().clone() };
+    let b = || { *options_b.choose(&mut rand::thread_rng()).unwrap() };
     let options_r = [(7,14), (7,15), (7,16)]; // right wall tile
-    let r = || { options_r.choose(&mut rand::thread_rng()).unwrap().clone() };
+    let r = || { *options_r.choose(&mut rand::thread_rng()).unwrap() };
 
     let tl = || { (7,1) }; // top left corner
     let tr = || { (7,2) }; // top right corner
@@ -165,7 +160,7 @@ fn spawn_sprites(
     let br = || { (7,4) }; // bottom right corner
 
     let options_tb = [(7,21), (7,22)]; // top and bottom wall tile
-    let tb = || { options_tb.choose(&mut rand::thread_rng()).unwrap().clone() };
+    let tb = || { *options_tb.choose(&mut rand::thread_rng()).unwrap() };
 
     // in reality, you'd probably want to import a map generated by an
     // external tool, or maybe proc-gen it yourself. For this example, a
@@ -214,13 +209,16 @@ fn spawn_sprites(
                 index: index as usize,
             };
 
-            commands.spawn(Sprite3d {
+            commands.spawn((
+                Sprite3dBuilder {
                     image: images.image.clone(),
                     pixels_per_metre: 16.,
                     double_sided: false,
-                    transform: Transform::from_xyz(x, 0.0, y).with_rotation(Quat::from_rotation_x(-std::f32::consts::PI / 2.0)),
                     ..default()
-            }.bundle_with_atlas(&mut sprite_params, atlas));
+                }.bundle_with_atlas(&mut sprite_params, atlas),
+                Transform::from_xyz(x, 0.0, y)
+                    .with_rotation(Quat::from_rotation_x(-std::f32::consts::PI / 2.0))
+            ));
         }
     }
 
@@ -267,15 +265,16 @@ fn spawn_sprites(
                     index: (tile_x + (5 - i) * 30) as usize,
                 };
                 
-                commands.spawn(Sprite3d {
+                commands.spawn((
+                    Sprite3dBuilder {
                         image: images.image.clone(),
                         pixels_per_metre: 16.,
                         double_sided: false,
-                        transform: Transform::from_xyz(x+0.5, i as f32 + 0.499, y)
-                            .with_rotation(Quat::from_rotation_y(
-                                dir * std::f32::consts::PI / 2.0)),
                         ..default()
-                }.bundle_with_atlas(&mut sprite_params, atlas));
+                    }.bundle_with_atlas(&mut sprite_params, atlas),
+                    Transform::from_xyz(x+0.5, i as f32 + 0.499, y)
+                        .with_rotation(Quat::from_rotation_y(dir * std::f32::consts::PI / 2.0))
+                ));
             }
         }
     }
@@ -304,15 +303,16 @@ fn spawn_sprites(
                     index: (tile_x + (5 - i) * 30) as usize,
                 };
 
-                commands.spawn(Sprite3d {
+                commands.spawn((
+                    Sprite3dBuilder {
                         image: images.image.clone(),
                         pixels_per_metre: 16.,
                         double_sided: false,
-                        transform: Transform::from_xyz(x, i as f32 + 0.499, y + 0.5)
-                            .with_rotation(Quat::from_rotation_y(
-                                    (dir - 1.0) * std::f32::consts::PI / 2.0)),
                         ..default()
-                }.bundle_with_atlas(&mut sprite_params, atlas));
+                    }.bundle_with_atlas(&mut sprite_params, atlas),
+                    Transform::from_xyz(x, i as f32 + 0.499, y + 0.5)
+                        .with_rotation(Quat::from_rotation_y((dir - 1.0) * std::f32::consts::PI / 2.0)),
+                ));
             }
         }
     }
@@ -326,21 +326,22 @@ fn spawn_sprites(
         for i in 0usize..height {
             let atlas = TextureAtlas {
                 layout: images.layout.clone(),
-                index: (tile_x + (tile_y - i) * 30) as usize,
+                index: (tile_x + (tile_y - i) * 30),
             };
 
-            let mut c = commands.spawn((Sprite3d {
+            let mut c = commands.spawn((
+                Sprite3dBuilder {
                     image: images.image.clone(),
                     pixels_per_metre: 16.,
-                    transform: Transform::from_xyz(x as f32, i as f32 + 0.498, y),
                     ..default()
                 }.bundle_with_atlas(&mut sprite_params, atlas),
                 FaceCamera {},
+                Transform::from_xyz(x as f32, i as f32 + 0.498, y),
             ));
 
             if frames > 1 {
                 c.insert(Animation {
-                    frames: (0..frames).map(|j| j + tile_x + (tile_y - i) * 30 as usize).collect(),
+                    frames: (0..frames).map(|j| j + tile_x + (tile_y - i) * 30_usize).collect(),
                     current: 0,
                     timer: timer.clone(),
                 });
@@ -369,33 +370,30 @@ fn spawn_sprites(
         index: 30*32 + 14,
     };
 
-    commands.spawn((Sprite3d {
+    commands.spawn((Sprite3dBuilder {
             image: images.image.clone(),
             pixels_per_metre: 16.,
-            transform: Transform::from_xyz(2.0, 0.5, -5.5),
             emissive: LinearRgba::rgb(1.0, 0.5, 0.0) * 10.0,
             unlit: true,
             ..default()
         }.bundle_with_atlas(&mut sprite_params, atlas),
-
+        Transform::from_xyz(2.0, 0.5, -5.5),
         Animation {
             frames: vec![30*32 + 14, 30*32 + 15, 30*32 + 16],
             current: 0,
             timer: Timer::from_seconds(0.2, TimerMode::Repeating),
         },
-
         FaceCamera {}
     ));
-    commands.spawn(PointLightBundle {
-        point_light: PointLight {
+    commands.spawn((
+        PointLight {
             intensity: 500_000.0,
             color: Color::srgb(1.0, 231./255., 221./255.),
             shadows_enabled: true,
             ..default()
         },
-        transform: Transform::from_xyz(2.0, 1.8, -5.5),
-        ..default()
-    });
+        Transform::from_xyz(2.0, 1.8, -5.5),
+    ));
 
     // glowy book
     let atlas = TextureAtlas {
@@ -403,27 +401,26 @@ fn spawn_sprites(
         index: 22*30 + 22,
     };
 
-    commands.spawn((Sprite3d {
+    commands.spawn((
+        Sprite3dBuilder {
             image: images.image.clone(),
             pixels_per_metre: 16.,
-            transform: Transform::from_xyz(-5., 0.7, 6.5),
             emissive: LinearRgba::rgb(165./255., 1.0, 160./255.),
             unlit: true,
             ..default()
         }.bundle_with_atlas(&mut sprite_params, atlas),
-
+        Transform::from_xyz(-5., 0.7, 6.5),
         FaceCamera {}
     ));
-    commands.spawn(PointLightBundle {
-        point_light: PointLight {
+    commands.spawn((
+        PointLight {
             intensity: 70_000.0,
             color: Color::srgb(91./255., 1.0, 92./255.),
             shadows_enabled: true,
             ..default()
         },
-        transform: Transform::from_xyz(-5., 1.1, 6.5),
-        ..default()
-    });
+        Transform::from_xyz(-5., 1.1, 6.5),
+    ));
 
 
 }
@@ -444,7 +441,7 @@ fn animate_camera(
     mut query: Query<&mut Transform, With<Camera>>,
 ) {
     let mut transform = query.single_mut();
-    let time = std::f32::consts::PI - time.elapsed_seconds() * CAM_SPEED + CAM_T_OFFSET;
+    let time = std::f32::consts::PI - time.elapsed_secs() * CAM_SPEED + CAM_T_OFFSET;
     transform.translation.x = time.sin() * CAM_DISTANCE;
     transform.translation.y = CAM_HEIGHT;
     transform.translation.z = time.cos() * CAM_DISTANCE;
@@ -454,11 +451,12 @@ fn animate_camera(
 
 fn animate_sprites(
     time: Res<Time>,
-    mut query: Query<(&mut Animation, &mut TextureAtlas)>,
+    mut query: Query<(&mut Animation, &mut Sprite3d)>,
 ) {
-    for (mut animation, mut atlas) in query.iter_mut() {
+    for (mut animation, mut sprite_3d) in query.iter_mut() {
         animation.timer.tick(time.delta());
         if animation.timer.just_finished() {
+            let atlas = sprite_3d.texture_atlas.as_mut().unwrap();
             atlas.index = animation.frames[animation.current];
             animation.current += 1;
             animation.current %= animation.frames.len();
