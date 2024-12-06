@@ -48,7 +48,6 @@ fn setup(
     assets            : Res<ImageAssets>,
     mut commands      : Commands,
     mut next_state    : ResMut<NextState<GameState>>,
-    mut sprite_params : Sprite3dParams
 ) {
 
     // poll every frame to check if assets are loaded. Once they are, we can proceed with setup.
@@ -66,15 +65,17 @@ fn setup(
         index: 3,
     };
 
-    commands.spawn(Sprite3dBuilder {
-            image: assets.image.clone(),
+    commands.spawn((
+        Sprite { image: assets.image.clone(), texture_atlas: Some(texture_atlas), ..default() },
+        Sprite3d {
             pixels_per_metre: 32.,
             alpha_mode: AlphaMode::Blend,
             unlit: true,
             // pivot: Some(Vec2::new(0.5, 0.5)),
             ..default()
-    }.bundle_with_atlas(&mut sprite_params, texture_atlas))
-    .insert(AnimationTimer(Timer::from_seconds(0.1, TimerMode::Repeating)));
+        },
+        AnimationTimer(Timer::from_seconds(0.1, TimerMode::Repeating)),
+    ));
 
     // -----------------------------------------------------------------------
 }
@@ -82,14 +83,16 @@ fn setup(
 
 fn animate_sprite(
     time: Res<Time>,
-    mut query: Query<(&mut AnimationTimer, &mut Sprite3d)>,
+    atlases: Res<Assets<TextureAtlasLayout>>,
+    mut query: Query<(&mut AnimationTimer, &mut Sprite)>,
 ) {
-    for (mut timer, mut sprite_3d) in query.iter_mut() {
+    for (mut timer, mut sprite) in query.iter_mut() {
         timer.tick(time.delta());
         if timer.just_finished() {
-            let length = sprite_3d.texture_atlas_keys.as_ref().unwrap().len();
-            let atlas = sprite_3d.texture_atlas.as_mut().unwrap();
-            atlas.index = (atlas.index + 1) % length;
+            let atlas = sprite.texture_atlas.as_mut().unwrap();
+            if let Some(layouts) = atlases.get(&atlas.layout) {
+                atlas.index = (atlas.index + 1) % layouts.textures.len();
+            }
         }
     }
 }
