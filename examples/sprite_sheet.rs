@@ -48,7 +48,6 @@ fn setup(
     assets            : Res<ImageAssets>,
     mut commands      : Commands,
     mut next_state    : ResMut<NextState<GameState>>,
-    mut sprite_params : Sprite3dParams
 ) {
 
     // poll every frame to check if assets are loaded. Once they are, we can proceed with setup.
@@ -66,14 +65,17 @@ fn setup(
         index: 3,
     };
 
-    commands.spawn(Sprite3dBuilder {
+    commands.spawn((
+        Sprite { image: assets.image.clone(), texture_atlas: Some(texture_atlas), ..default() },
+        Sprite3d {
             pixels_per_metre: 32.,
             alpha_mode: AlphaMode::Blend,
             unlit: true,
             // pivot: Some(Vec2::new(0.5, 0.5)),
             ..default()
-    }.bundle_with_atlas(&mut sprite_params, assets.image.clone(), texture_atlas))
-    .insert(AnimationTimer(Timer::from_seconds(0.1, TimerMode::Repeating)));
+        },
+        AnimationTimer(Timer::from_seconds(0.1, TimerMode::Repeating)),
+    ));
 
     // -----------------------------------------------------------------------
 }

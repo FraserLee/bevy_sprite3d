@@ -33,7 +33,6 @@ fn setup(
     assets            : Res<Assets>,
     mut commands      : Commands,
     mut next_state    : ResMut<NextState<GameState>>,
-    mut sprite_params : Sprite3dParams
 ) {
 
     // poll every frame to check if assets are loaded. Once they are, we can proceed with setup.
@@ -47,7 +46,8 @@ fn setup(
 
     // ----------------------- Spawn a 3D sprite -----------------------------
 
-    commands.spawn(Sprite3dBuilder {
+    commands.spawn((
+        Sprite3d {
             pixels_per_metre: 400.,
 
             alpha_mode: AlphaMode::Blend,
@@ -57,7 +57,12 @@ fn setup(
             // pivot: Some(Vec2::new(0.5, 0.5)),
 
             ..default()
-    }.bundle(&mut sprite_params, assets.0.clone()));
+        },
+        Sprite {
+            image: assets.0.clone(),
+            ..default()
+        }
+    ));
 
     // -----------------------------------------------------------------------
 }
