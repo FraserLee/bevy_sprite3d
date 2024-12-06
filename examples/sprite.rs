@@ -48,8 +48,6 @@ fn setup(
     // ----------------------- Spawn a 3D sprite -----------------------------
 
     commands.spawn(Sprite3dBuilder {
-            image: assets.0.clone(),
-
             pixels_per_metre: 400.,
 
             alpha_mode: AlphaMode::Blend,
@@ -59,7 +57,7 @@ fn setup(
             // pivot: Some(Vec2::new(0.5, 0.5)),
 
             ..default()
-    }.bundle(&mut sprite_params));
+    }.bundle(&mut sprite_params, assets.0.clone()));
 
     // -----------------------------------------------------------------------
 }
