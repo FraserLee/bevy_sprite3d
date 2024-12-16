@@ -23,7 +23,7 @@ impl Plugin for Sprite3dPlugin {
             .init_resource::<WaitingForLoad>()
             .init_resource::<Assets<Billboard>>()
             .add_systems(Startup, default_material)
-            .add_systems(PostUpdate, finish_billboards)
+            .add_systems(PreUpdate, finish_billboards)
             .add_systems(PostUpdate, handle_texture_atlases);
     }
 }
@@ -51,17 +51,19 @@ fn handle_texture_atlases(
     billboards: Res<Assets<Billboard>>,
     mut query: Query<(&mut Mesh3d, &Sprite3d, &Sprite3dBillboard), Changed<Sprite3d>>,
 ) {
-    for (mut mesh, sprite_3d, billboard) in query.iter_mut() {
+    for (mut mesh, sprite_3d, billboard_3d) in query.iter_mut() {
         let Some(texture_atlas) = &sprite_3d.texture_atlas else {
             continue;
         };
 
-        let billboard = billboards.get(&billboard.0).unwrap();
+        let billboard = billboards.get(&billboard_3d.0).unwrap();
         let BillboardKind::Atlas { mesh_list, .. } = &billboard.kind else {
-            panic!("attempted to apply a TextureAtlas onto a non-atlas Sprite3D");
+            panic!("attempted to apply TextureAtlas, but the billboard is not associated with one");
         };
 
-        **mesh = mesh_list[texture_atlas.index].clone();
+        if !mesh_list.is_empty() {
+            **mesh = mesh_list[texture_atlas.index].clone();
+        }
     }
 }
 
