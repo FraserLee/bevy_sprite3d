@@ -9,71 +9,23 @@ use bevy_sprite3d::prelude::*;
 
 use rand::{prelude::SliceRandom, Rng};
 
-#[derive(States, Hash, Clone, PartialEq, Eq, Debug, Default)]
-enum GameState { #[default] Loading, Ready }
-
-// #[derive(AssetCollection, Resource)]
-// struct ImageAssets {
-//     #[asset(texture_atlas(tile_size_x = 16., tile_size_y = 16.,
-//             columns = 30, rows = 35, padding_x = 10., padding_y = 10.,
-//             offset_x = 5., offset_y = 5.))]
-//     #[asset(path = "dungeon/tileset_padded.png")]
-//     tileset: Handle<TextureAtlas>,
-// }
-#[derive(Resource, Default)]
-struct ImageAssets {
-    image: Handle<Image>,
-    layout: Handle<TextureAtlasLayout>,
-}
-
-
 fn main() {
-
     App::new()
         .add_plugins(DefaultPlugins
             .set(ImagePlugin::default_nearest())
             .set(WindowPlugin {
-                primary_window: Some( Window{
+                primary_window: Some(Window {
                     resolution: WindowResolution::new(1080.0, 1080.0 * 3./4.),
                     ..default()
-                }), ..default()
+                }),
+                ..default()
             }))
         .add_plugins(Sprite3dPlugin)
-        .init_state::<GameState>()
-
-        // initially load assets
-        .add_systems(Startup, |asset_server: Res<AssetServer>,
-                               mut assets:   ResMut<ImageAssets>,
-                               mut layouts:  ResMut<Assets<TextureAtlasLayout>>| {
-
-            assets.image = asset_server.load("dungeon/tileset_padded.png");
-
-            assets.layout = layouts.add(
-                TextureAtlasLayout::from_grid(
-                                        UVec2::new(16, 16),
-                                        30,
-                                        35,
-                                        Some(UVec2::new(10, 10)),
-                                        Some(UVec2::new(5, 5)))
-            );
-        })
-
-        // every frame check if assets are loaded. Once they are, we can proceed with setup.
-        .add_systems(Update, (
-                       |asset_server   : Res<AssetServer>,
-                        assets         : Res<ImageAssets>,
-                        mut next_state : ResMut<NextState<GameState>>| {
-
-            if asset_server.get_load_state(assets.image.id()).is_some_and(|s| s.is_loaded()) {
-                next_state.set(GameState::Ready);
-            }
-        }).run_if(in_state(GameState::Loading)) )
-        .add_systems( OnEnter(GameState::Ready), setup )
-        .add_systems( OnEnter(GameState::Ready), spawn_sprites )
-        .add_systems( Update, animate_camera.run_if(in_state(GameState::Ready)) )
-        .add_systems( Update, animate_sprites.run_if(in_state(GameState::Ready)) )
-        .add_systems( Update, face_camera.run_if(in_state(GameState::Ready)) )
-        .insert_resource(ImageAssets::default())
+        .add_systems(Startup, setup)
+        .add_systems(Startup, spawn_sprites)
+        .add_systems(Update, animate_camera)
+        .add_systems(Update, animate_sprites)
+        .add_systems(Update, face_camera)
         .run();
 
 }
@@ -99,6 +51,7 @@ fn setup(
         MeshMaterial3d(materials.add(Color::WHITE)),
         Transform::from_xyz(-0.9, 0.5, -3.1),
     ));
+
     // sphere
     commands.spawn((
         Mesh3d(meshes.add(Sphere::new(0.6))),
@@ -130,10 +83,22 @@ fn setup(
 }
 
 fn spawn_sprites(
+    asset_server: Res<AssetServer>,
     mut commands: Commands,
-    images: Res<ImageAssets>,
-    mut sprite_params: Sprite3dParams,
+    mut materials:  ResMut<Assets<StandardMaterial>>,
+    mut layouts:  ResMut<Assets<TextureAtlasLayout>>,
+    mut billboards:  ResMut<Assets<Billboard>>,
 ) {
+    // load tileset image and layout
+    let tileset_image: Handle<Image> = asset_server.load("dungeon/tileset_padded.png");
+    let tileset_layout = layouts.add(TextureAtlasLayout::from_grid(
+        UVec2::new(16, 16),
+        30,
+        35,
+        Some(UVec2::new(10, 10)),
+        Some(UVec2::new(5, 5)),
+    ));
+
     // ------------------ Tilemap for the floor ------------------
 
     // we first set up a few closures to help generate variations of tiles
@@ -205,19 +170,17 @@ fn spawn_sprites(
             if index == 0 { continue; }
 
             let atlas = TextureAtlas {
-                layout: images.layout.clone(),
+                layout: tileset_layout.clone(),
                 index: index as usize,
             };
 
             commands.spawn((
-                Sprite3dBuilder {
-                    image: images.image.clone(),
-                    pixels_per_metre: 16.,
-                    double_sided: false,
-                    ..default()
-                }.bundle_with_atlas(&mut sprite_params, atlas),
+                Sprite3d::from(atlas),
+                Sprite3dBillboard::new(billboards.add(
+                    Billboard::from((tileset_image.clone(), tileset_layout.clone())),
+                )),
                 Transform::from_xyz(x, 0.0, y)
-                    .with_rotation(Quat::from_rotation_x(-std::f32::consts::PI / 2.0))
+                    .with_rotation(Quat::from_rotation_x(-std::f32::consts::PI / 2.0)),
             ));
         }
     }
@@ -242,6 +205,15 @@ fn spawn_sprites(
         }
     };
 
+    // all walls can share a handle to the same billboard
+    let wall_billboard = billboards.add(Billboard::with_texture_atlas(
+        tileset_image.clone(),
+        tileset_layout.clone(),
+        16.,
+        None,
+        false,
+    ));
+
     for y in 1..(map.len() - 1) {
         for x in 0..(map[y].len() - 1) {
             if (map[y][x] != (0,0)) ^ (map[y][x+1] == (0,0)) { continue; }
@@ -261,18 +233,14 @@ fn spawn_sprites(
 
             for i in [0,1] { // add bottom and top piece
                 let atlas = TextureAtlas {
-                    layout: images.layout.clone(),
+                    layout: tileset_layout.clone(),
                     index: (tile_x + (5 - i) * 30) as usize,
                 };
-                
+
                 commands.spawn((
-                    Sprite3dBuilder {
-                        image: images.image.clone(),
-                        pixels_per_metre: 16.,
-                        double_sided: false,
-                        ..default()
-                    }.bundle_with_atlas(&mut sprite_params, atlas),
-                    Transform::from_xyz(x+0.5, i as f32 + 0.499, y)
+                    Sprite3d::from(atlas),
+                    Sprite3dBillboard::new(wall_billboard.clone()),
+                    Transform::from_xyz(x + 0.5, i as f32 + 0.499, y)
                         .with_rotation(Quat::from_rotation_y(dir * std::f32::consts::PI / 2.0))
                 ));
             }
@@ -299,17 +267,13 @@ fn spawn_sprites(
 
             for i in [0,1]{ // add bottom and top piece
                 let atlas = TextureAtlas {
-                    layout: images.layout.clone(),
+                    layout: tileset_layout.clone(),
                     index: (tile_x + (5 - i) * 30) as usize,
                 };
 
                 commands.spawn((
-                    Sprite3dBuilder {
-                        image: images.image.clone(),
-                        pixels_per_metre: 16.,
-                        double_sided: false,
-                        ..default()
-                    }.bundle_with_atlas(&mut sprite_params, atlas),
+                    Sprite3d::from(atlas),
+                    Sprite3dBillboard::new(wall_billboard.clone()),
                     Transform::from_xyz(x, i as f32 + 0.499, y + 0.5)
                         .with_rotation(Quat::from_rotation_y((dir - 1.0) * std::f32::consts::PI / 2.0)),
                 ));
@@ -318,6 +282,14 @@ fn spawn_sprites(
     }
 
     // --------------------- characters, enemies, props ---------------------
+    
+    let prop_billboard = billboards.add(Billboard::with_texture_atlas(
+        tileset_image.clone(),
+        tileset_layout.clone(),
+        16.,
+        None,
+        true,
+    ));
 
     let mut entity = |(x, y), tile_x, tile_y, height, frames| {
         let mut timer = Timer::from_seconds(0.4, TimerMode::Repeating);
@@ -325,16 +297,13 @@ fn spawn_sprites(
 
         for i in 0usize..height {
             let atlas = TextureAtlas {
-                layout: images.layout.clone(),
+                layout: tileset_layout.clone(),
                 index: (tile_x + (tile_y - i) * 30),
             };
 
             let mut c = commands.spawn((
-                Sprite3dBuilder {
-                    image: images.image.clone(),
-                    pixels_per_metre: 16.,
-                    ..default()
-                }.bundle_with_atlas(&mut sprite_params, atlas),
+                Sprite3d::from(atlas),
+                Sprite3dBillboard::new(prop_billboard.clone()),
                 FaceCamera {},
                 Transform::from_xyz(x as f32, i as f32 + 0.498, y),
             ));
@@ -366,17 +335,26 @@ fn spawn_sprites(
 
     // fire
     let atlas = TextureAtlas {
-        layout: images.layout.clone(),
+        layout: tileset_layout.clone(),
         index: 30*32 + 14,
     };
 
-    commands.spawn((Sprite3dBuilder {
-            image: images.image.clone(),
-            pixels_per_metre: 16.,
+    commands.spawn((
+        Sprite3d::from(atlas),
+        Sprite3dBillboard::new(billboards.add(
+            Billboard::with_texture_atlas(
+                tileset_image.clone(),
+                tileset_layout.clone(),
+                16.,
+                None,
+                true,
+            ),
+        )),
+        MeshMaterial3d(materials.add(StandardMaterial {
             emissive: LinearRgba::rgb(1.0, 0.5, 0.0) * 10.0,
             unlit: true,
             ..default()
-        }.bundle_with_atlas(&mut sprite_params, atlas),
+        })),
         Transform::from_xyz(2.0, 0.5, -5.5),
         Animation {
             frames: vec![30*32 + 14, 30*32 + 15, 30*32 + 16],
@@ -385,6 +363,7 @@ fn spawn_sprites(
         },
         FaceCamera {}
     ));
+
     commands.spawn((
         PointLight {
             intensity: 500_000.0,
@@ -397,21 +376,30 @@ fn spawn_sprites(
 
     // glowy book
     let atlas = TextureAtlas {
-        layout: images.layout.clone(),
+        layout: tileset_layout.clone(),
         index: 22*30 + 22,
     };
 
     commands.spawn((
-        Sprite3dBuilder {
-            image: images.image.clone(),
-            pixels_per_metre: 16.,
+        Sprite3d::from(atlas),
+        Sprite3dBillboard::new(billboards.add(
+            Billboard::with_texture_atlas(
+                tileset_image.clone(),
+                tileset_layout.clone(),
+                16.,
+                None,
+                true,
+            ),
+        )),
+        MeshMaterial3d(materials.add(StandardMaterial {
             emissive: LinearRgba::rgb(165./255., 1.0, 160./255.),
             unlit: true,
             ..default()
-        }.bundle_with_atlas(&mut sprite_params, atlas),
+        })),
         Transform::from_xyz(-5., 0.7, 6.5),
         FaceCamera {}
     ));
+
     commands.spawn((
         PointLight {
             intensity: 70_000.0,
@@ -421,8 +409,6 @@ fn spawn_sprites(
         },
         Transform::from_xyz(-5., 1.1, 6.5),
     ));
-
-
 }
 
 // parameters for how the camera orbits the area
