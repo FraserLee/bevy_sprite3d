@@ -47,27 +47,17 @@ and spawn sprites with
 fn setup(
     mut commands: Commands,
     images: Res<ImageAssets>, // this is your custom resource populated with asset handles
-    mut sprite_params: Sprite3dParams
+    mut billboards: ResMut<Assets<Billboard>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
 
     // ----------------------- Single Static Sprite ----------------------------
-
-    commands.spawn(Sprite3d {
-            image: images.sprite.clone(),
-
-            pixels_per_metre: 400.,
-
-            partial_alpha: true,
-
-            unlit: true,
-
-            ..default()
-
-            // transform: Transform::from_xyz(0., 0., 0.),
-            // pivot: Some(Vec2::new(0.5, 0.5)),
-            // double_sided: true,
-
-    }.bundle(&mut sprite_params));
+    commands.spawn((
+        Sprite3d::default(),
+        Sprite3dBillboard(billboards.add(
+            Billboard::new(images.sprite.clone(), 400., None, true),
+        )),
+    ))
 
     // ------------------- Texture Atlas (Sprite Sheet) ------------------------
 
@@ -76,27 +66,25 @@ fn setup(
         index: 3,
     };
 
-    commands.spawn(Sprite3d {
-            image: images.sprite_sheet.clone(),
-
-            pixels_per_metre: 32.,
-            partial_alpha: true,
+    commands.spawn((
+        Sprite3d::from(texture_atlas),
+        Sprite3dBillboard(billboards.add(
+            Billboard::with_texture_atlas(
+                images.sprite.clone(),
+                400.,
+                None,
+                true,
+            ),
+        )),
+        MeshMaterial3d(materials.add(StandardMaterial {
             unlit: true,
-
-            ..default()
-
-            // transform: Transform::from_xyz(0., 0., 0.),
-            // pivot: Some(Vec2::new(0.5, 0.5)),
-            // double_sided: true,
-
-    }.bundle_with_atlas(&mut sprite_params, texture_atlas));
+            // utility function for a `StandardMaterial` with settings
+            // suited for a 3d sprite
+            ..bevy_sprite3d::utils::material(),
+        })),
+    ))
 }
 ```
-
-One small complication: your image assets should be loaded *prior* to spawning,
-as `bevy_sprite3d` uses some properties of the image (such as size and aspect
-ratio) in constructing the 3d mesh. Examples show how to do this with Bevy's
-`States`.
 
 ## Versioning
 

@@ -9,6 +9,9 @@ readme = "readme.md"
 repository = "https://github.com/FraserLee/bevy_sprite3d"
 keywords = ["gamedev", "bevy", "sprite", "3d"]
 
+[dependencies]
+uuid = "1.11.0"
+
 [dependencies.bevy]
 version = "0.15"
 default-features = false

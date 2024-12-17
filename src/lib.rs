@@ -1,400 +1,381 @@
-use bevy::prelude::*;
-use bevy::render::{ mesh::*, render_resource::*, render_asset::RenderAssetUsages};
-use bevy::utils::HashMap;
-use std::hash::Hash;
+use bevy::{
+    asset::WaitForAssetError,
+    ecs::{
+        component::ComponentId,
+        world::DeferredWorld,
+    },
+    prelude::*,
+    tasks::{block_on, poll_once, IoTaskPool, Task}
+};
+use uuid::Uuid;
+
+const DEFAULT_MATERIAL_ID: Uuid = Uuid::from_u128(0xb4c3caf5ead145b985d10d8a5fc676d5_u128);
 
 pub mod prelude;
+pub mod utils;
 
+mod quad;
+
+/// Holds the resources and systems necessary for a [Sprite3d] to work.
 pub struct Sprite3dPlugin;
+
 impl Plugin for Sprite3dPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<Sprite3dCaches>();
-        app.add_systems(PostUpdate, handle_texture_atlases);
+        app
+            .init_resource::<WaitingForLoad>()
+            .init_resource::<Assets<Billboard>>()
+            .add_systems(Startup, default_material)
+            .add_systems(PreUpdate, finish_billboards)
+            .add_systems(PostUpdate, handle_texture_atlases);
     }
 }
 
-
-// sizes are multiplied by this, then cast to ints to query the mesh hashmap.
-const MESH_CACHE_GRANULARITY: f32 = 1000.;
-
-use std::marker::PhantomData;
-use bevy::ecs::system::SystemParam;
-
-// everything needed to register a sprite, passed in one go.
-#[derive(SystemParam)]
-pub struct Sprite3dParams<'w, 's> {
-    pub meshes        : ResMut<'w, Assets<Mesh>>,
-    pub materials     : ResMut<'w, Assets<StandardMaterial>>,
-    pub images        : ResMut<'w, Assets<Image>>,
-    pub atlas_layouts : ResMut<'w, Assets<TextureAtlasLayout>>,
-    pub caches        : ResMut<'w, Sprite3dCaches>,
-    #[system_param(ignore)]
-    marker: PhantomData<&'s usize>,
+fn default_material(mut standard_materials: ResMut<Assets<StandardMaterial>>) {
+    standard_materials.insert(
+        AssetId::Uuid { uuid: DEFAULT_MATERIAL_ID },
+        utils::material(),
+    );
 }
 
-#[derive(Eq, Hash, PartialEq)]
-pub struct MatKey {
-    image: Handle<Image>,
-    alpha_mode: HashableAlphaMode,
-    unlit: bool,
-    emissive: [u8; 4],
-}
-
-const DEFAULT_ALPHA_MODE: AlphaMode = AlphaMode::Mask(0.5);
-
-#[derive(Eq, PartialEq)]
-struct HashableAlphaMode(AlphaMode);
-
-impl Hash for HashableAlphaMode {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        match self.0 {
-            AlphaMode::Opaque => 0.hash(state),
-            AlphaMode::Mask(f) => {
-                1.hash(state);
-                f.to_bits().hash(state);
-            },
-            AlphaMode::Blend => 2.hash(state),
-            AlphaMode::Premultiplied => 3.hash(state),
-            AlphaMode::Add => 4.hash(state),
-            AlphaMode::Multiply => 5.hash(state),
-            AlphaMode::AlphaToCoverage => 6.hash(state),
-        }
-    }
-}
-
-
-fn reduce_colour(c: LinearRgba) -> [u8; 4] { [
-        (c.red * 255.) as u8,
-        (c.green * 255.) as u8,
-        (c.blue * 255.) as u8,
-        (c.alpha * 255.) as u8,
-] }
-
-
-#[derive(Resource)]
-pub struct Sprite3dCaches {
-    pub mesh_cache: HashMap<[u32; 9], Handle<Mesh>>,
-    pub material_cache: HashMap<MatKey, Handle<StandardMaterial>>,
-}
-
-impl Default for Sprite3dCaches {
-    fn default() -> Self {
-        Sprite3dCaches {
-            mesh_cache: HashMap::new(),
-            material_cache: HashMap::new(),
-        }
-    }
-}
-
-
-
-
-
-
-
-// Update the mesh of a Sprite3d with an atlas sprite when its index changes.
+// Update the mesh of a Sprite3d with an texture atlas when its index changes.
 fn handle_texture_atlases(
-    caches: Res<Sprite3dCaches>,
-    mut query: Query<(&mut Mesh3d, &Sprite3d), Changed<Sprite3d>>,
+    billboards: Res<Assets<Billboard>>,
+    mut query: Query<(&mut Mesh3d, &Sprite3d, &Sprite3dBillboard), Changed<Sprite3d>>,
 ) {
-    for (mut mesh, sprite_3d) in query.iter_mut() {
+    for (mut mesh, sprite_3d, billboard_3d) in query.iter_mut() {
         let Some(texture_atlas) = &sprite_3d.texture_atlas else {
             continue;
         };
-        let Some(mesh_keys) = &sprite_3d.texture_atlas_keys else {
-            continue;
+
+        let billboard = billboards.get(&billboard_3d.0).unwrap();
+        let BillboardKind::Atlas { mesh_list, .. } = &billboard.kind else {
+            panic!("attempted to apply TextureAtlas, but the billboard is not associated with one");
         };
 
-        **mesh = caches.mesh_cache.get(&mesh_keys[texture_atlas.index]).unwrap().clone();
-    }
-}
-
-
-
-
-// creates a (potentially offset) quad mesh facing +z
-// pivot = None will have a center pivot
-// pivot = Some(p) will have an expected range of p \in (0,0) to (1,1)
-// (though you can go out of bounds without issue)
-fn quad(w: f32, h: f32, pivot: Option<Vec2>, double_sided: bool) -> Mesh {
-    let w2 = w / 2.0;
-    let h2 = h / 2.0;
-
-    // Set RenderAssetUsages to the default value. Maybe allow customization or
-    // choose a better default?
-    let mut mesh = Mesh::new(
-        PrimitiveTopology::TriangleList,
-        RenderAssetUsages::default(),
-    );
-
-    let vertices = match pivot {
-        None => { vec![[-w2, -h2, 0.0], [w2, -h2, 0.0], [-w2, h2, 0.0], [w2, h2, 0.0],
-                       [-w2, -h2, 0.0], [w2, -h2, 0.0], [-w2, h2, 0.0], [w2, h2, 0.0]] },
-        Some(pivot) => {
-            let px = pivot.x * w;
-            let py = pivot.y * h;
-            vec![[-px, -py, 0.0], [w - px, -py, 0.0], [-px, h - py, 0.0], [w - px, h - py, 0.0],
-                 [-px, -py, 0.0], [w - px, -py, 0.0], [-px, h - py, 0.0], [w - px, h - py, 0.0]]
+        if !mesh_list.is_empty() {
+            **mesh = mesh_list[texture_atlas.index].clone();
         }
-    };
-
-    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, vertices);
-
-    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, vec![[0.0, 0.0,  1.0], [0.0, 0.0,  1.0], [0.0, 0.0,  1.0], [0.0, 0.0,  1.0],
-                                                       [0.0, 0.0, -1.0], [0.0, 0.0, -1.0], [0.0, 0.0, -1.0], [0.0, 0.0, -1.0]]);
-
-    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, vec![[0.0, 1.0], [1.0, 1.0], [0.0, 0.0], [1.0, 0.0],
-                                                     [0.0, 1.0], [1.0, 1.0], [0.0, 0.0], [1.0, 0.0]]);
-
-    mesh.insert_indices(Indices::U32(
-        if double_sided { vec![0, 1, 2, 1, 3, 2, 5, 4, 6, 7, 5, 6] }
-        else {            vec![0, 1, 2, 1, 3, 2] }
-    ));
-
-    mesh
-}
-
-
-
-
-// generate a StandardMaterial useful for rendering a sprite
-fn material(image: Handle<Image>, alpha_mode: AlphaMode, unlit: bool, emissive: LinearRgba) -> StandardMaterial {
-    StandardMaterial {
-        base_color_texture: Some(image),
-        cull_mode: Some(Face::Back),
-        alpha_mode,
-        unlit,
-        perceptual_roughness: 0.5,
-        reflectance: 0.15,
-        emissive,
-
-        ..Default::default()
     }
 }
 
-
-
-
-/// A precursor struct for a sprite. Set necessary parameters manually, use
-/// `..default()` for others, then call `bundle()` to to get a bundle
-/// that can be spawned into the world.
-pub struct Sprite3dBuilder {
-    /// the sprite image. See `readme.md` for examples.
-    pub image: Handle<Image>,
-
-    // TODO: ability to specify exact size, with None scaled by image's ratio and other.
-
-    /// the number of pixels per metre of the sprite, assuming a `Transform::scale` of 1.0.
-    pub pixels_per_metre: f32,
-
-    /// The sprite's pivot. eg. the point specified by the sprite's
-    /// transform, around which a rotation will be performed.
-    ///
-    /// - pivot = None will have a center pivot
-    /// - pivot = Some(p) will have an expected range of p \in `(0,0)` to `(1,1)`
-    ///   (though you can go out of bounds without issue)
-    pub pivot: Option<Vec2>,
-
-    /// The sprite's alpha mode.
-    ///
-    /// - `Mask(0.5)` (default) only allows fully opaque or fully transparent pixels
-    ///   (cutoff at `0.5`).
-    /// - `Blend` allows partially transparent pixels (slightly more expensive).
-    /// - Use any other value to achieve desired blending effect.
-    pub alpha_mode: AlphaMode,
-
-    /// Whether the sprite should be rendered as unlit.
-    /// `false` (default) allows for lighting.
-    pub unlit: bool,
-
-    /// Whether the sprite should be rendered as double-sided.
-    /// `true` (default) adds a second set of indices, describing the same tris
-    /// in reverse order.
-    pub double_sided: bool,
-
-    /// An emissive colour, if the sprite should emit light.
-    /// `LinearRgba::Black` (default) does nothing.
-    pub emissive: LinearRgba,
+/// Represents a 3D sprite.
+#[derive(Clone, Default, Component, Reflect)]
+#[require(Sprite3dBillboard)]
+pub struct Sprite3d {
+    /// Holds texture atlas data for the sprite. The layout must match the corresponding
+    /// layout stored in the [Billboard] at the risk of causing bugs or panics.
+    pub texture_atlas: Option<TextureAtlas>,
 }
 
-impl Default for Sprite3dBuilder {
+impl Sprite3d {
+    /// Create a new `Sprite3d`.
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl From<TextureAtlas> for Sprite3d {
+    fn from(atlas: TextureAtlas) -> Self {
+        Self {
+            texture_atlas: Some(atlas),
+        }
+    }
+}
+
+// Defines whether the billboard stores a single image or a texture atlas.
+#[derive(Clone)]
+enum BillboardKind {
+    Single {
+        mesh: Handle<Mesh>,
+    },
+    Atlas {
+        mesh_list: Vec<Handle<Mesh>>,
+        layout: Handle<TextureAtlasLayout>,
+    }
+}
+
+// stores entities whose billboards are potentially waiting for their image
+// to load
+#[derive(Resource, Deref, DerefMut, Default)]
+struct WaitingForLoad(Vec<(Entity, Task<Result<(), WaitForAssetError>>)>);
+
+#[derive(Clone, Component, Deref, Default)]
+#[require(Transform, Mesh3d, MeshMaterial3d<StandardMaterial>(set_material))]
+#[component(on_insert = add_to_waiting_list)]
+/// Holds the [Billboard] associated with a [Sprite3d]. Has no effect if inserted
+/// into an entity without the `Sprite3d` component. The inner `Handle<Billboard>` is
+/// private to prevent direct modification, but can be read through dereference.
+///
+/// An internal system will update the [Mesh3d] and [MeshMaterial3d] components after
+/// this component is inserted, once the [Image] associated with the `Billboard` is
+/// fully loaded.
+pub struct Sprite3dBillboard(Handle<Billboard>);
+
+impl Sprite3dBillboard {
+    /// Create a new `Sprite3dBillboard`.
+    pub fn new(billboard: Handle<Billboard>) -> Self {
+        Self::from(billboard)
+    }
+}
+
+impl From<Handle<Billboard>> for Sprite3dBillboard {
+    fn from(handle: Handle<Billboard>) -> Self {
+        Self(handle)
+    }
+}
+
+fn set_material() -> MeshMaterial3d<StandardMaterial> {
+    MeshMaterial3d(Handle::Weak(AssetId::Uuid {
+        uuid: DEFAULT_MATERIAL_ID,
+    }))
+}
+
+/// Represents the "billboard", a flat rectangular 3D mesh that the sprite is
+/// displayed on. Attached onto a sprite with the [Sprite3dBillboard] component.
+#[derive(Clone, Asset, TypePath)]
+pub struct Billboard {
+    // The image associated with the billboard.
+    #[dependency]
+    image: Handle<Image>,
+    // See [BillboardKind].
+    kind: BillboardKind,
+    pixels_per_metre: f32,
+    pivot: Vec2,
+    double_sided: bool,
+    rendered: bool,
+}
+
+impl Billboard {
+    /// Creates a billboard associated with a single image.
+    ///
+    /// * `image`: The handle to the image associated with this billboard,
+    ///   loaded or not.
+    /// * `pixels_per_metre`: The number of pixels per metre of the sprite,
+    ///   assuming a `Transform::scale` of `1.0`. Defaults to `100.0`.
+    /// * `pivot`: The point around which the sprite will rotate. Defaults to the center
+    ///   of the image, `Vec2(0.5, 0.5)`.
+    /// * `double_sided`: Whether the billboard displays the image on both sides or
+    ///   just the 'front'. Defaults to `true`.
+    pub fn new(
+        image: Handle<Image>,
+        pixels_per_metre: f32,
+        pivot: Option<Vec2>,
+        double_sided: bool,
+    ) -> Self {
+        Self {
+            image,
+            pixels_per_metre,
+            pivot: pivot.unwrap_or(Vec2::splat(0.5)),
+            double_sided,
+            ..default()
+        }
+    }
+
+    /// Creates a billboard associated with a texture atlas. Refer to [Billboard::new]
+    /// for more details.
+    pub fn with_texture_atlas(
+        image: Handle<Image>,
+        layout: Handle<TextureAtlasLayout>,
+        pixels_per_metre: f32,
+        pivot: Option<Vec2>,
+        double_sided: bool,
+    ) -> Self {
+        Self {
+            image,
+            kind: BillboardKind::Atlas {
+                mesh_list: Vec::new(),
+                layout,
+            },
+            pixels_per_metre,
+            pivot: pivot.unwrap_or(Vec2::splat(0.5)),
+            double_sided,
+            ..default()
+        }
+    }
+}
+
+impl Default for Billboard {
     fn default() -> Self {
         Self {
             image: Default::default(),
+            kind: BillboardKind::Single {
+                mesh: Default::default(),
+            },
             pixels_per_metre: 100.,
-            pivot: None,
-            alpha_mode: DEFAULT_ALPHA_MODE,
-            unlit: false,
+            pivot: Vec2::splat(0.5),
             double_sided: true,
-            emissive: LinearRgba::BLACK,
+            rendered: false,
         }
     }
 }
 
-
-/// Represents a 3D sprite. May store texture atlas data -- note that modifying
-/// `texture_atlas` and `texture_atlas_keys` on an already spawned sprite may
-/// cause buggy behavior.
-#[derive(Component)]
-#[require(Transform, Mesh3d)]
-pub struct Sprite3d {
-    pub texture_atlas: Option<TextureAtlas>,
-    pub texture_atlas_keys: Option<Vec<[u32; 9]>>,
-}
-
-#[derive(Bundle)]
-pub struct Sprite3dBundle {
-    pub sprite_3d: Sprite3d,
-    pub mesh: Mesh3d,
-    pub material: MeshMaterial3d<StandardMaterial>,
-}
-
-impl Sprite3dBuilder {
-    /// creates a bundle of components
-    pub fn bundle(self, params: &mut Sprite3dParams) -> Sprite3dBundle {
-        // get image dimensions
-        let image_size = params.images.get(&self.image).unwrap().texture_descriptor.size;
-        // w & h are the world-space size of the sprite.
-        let w = (image_size.width  as f32) / self.pixels_per_metre;
-        let h = (image_size.height as f32) / self.pixels_per_metre;
-
-        return Sprite3dBundle {
-            sprite_3d: Sprite3d {
-                texture_atlas: None,
-                texture_atlas_keys: None,
-            },
-            mesh: {
-                let pivot = self.pivot.unwrap_or(Vec2::new(0.5, 0.5));
-
-                let mesh_key = [(w * MESH_CACHE_GRANULARITY) as u32,
-                                (h * MESH_CACHE_GRANULARITY) as u32,
-                                (pivot.x * MESH_CACHE_GRANULARITY) as u32,
-                                (pivot.y * MESH_CACHE_GRANULARITY) as u32,
-                                self.double_sided as u32,
-                                0, 0, 0, 0
-                                ];
-
-                // if we have a mesh in the cache, use it.
-                // (greatly reduces number of unique meshes for tilemaps, etc.)
-                Mesh3d(if let Some(mesh) = params.caches.mesh_cache.get(&mesh_key) { mesh.clone() }
-                else { // otherwise, create a new mesh and cache it.
-                    let mesh = params.meshes.add(quad( w, h, self.pivot, self.double_sided ));
-                    params.caches.mesh_cache.insert(mesh_key, mesh.clone());
-                    mesh
-                })
-            },
-            // likewise for material, use the existing if the image is already cached.
-            // (possibly look into a bool in Sprite3dBuilder to manually disable caching for an individual sprite?)
-            material: {
-                let mat_key = MatKey {
-                    image: self.image.clone(),
-                    alpha_mode: HashableAlphaMode(self.alpha_mode),
-                    unlit: self.unlit,
-                    emissive: reduce_colour(self.emissive),
-                };
-
-                MeshMaterial3d(if let Some(material) = params.caches.material_cache.get(&mat_key) { material.clone() }
-                else {
-                    let material = params.materials.add(material(self.image.clone(), self.alpha_mode, self.unlit, self.emissive));
-                    params.caches.material_cache.insert(mat_key, material.clone());
-                    material
-                })
-            },
+impl From<Handle<Image>> for Billboard {
+    fn from(image: Handle<Image>) -> Self {
+        Self {
+            image,
+            ..default()
         }
     }
+}
 
-    /// creates a bundle of components with support for texture atlases
-    pub fn bundle_with_atlas(
-        self,
-        params: &mut Sprite3dParams,
-        atlas: TextureAtlas,
-    ) -> Sprite3dBundle {
-        let atlas_layout = params.atlas_layouts.get(&atlas.layout).unwrap();
-        let image = params.images.get(&self.image).unwrap();
-        let image_size = image.texture_descriptor.size;
+impl From<(Handle<Image>, Handle<TextureAtlasLayout>)> for Billboard {
+    fn from((image, layout): (Handle<Image>, Handle<TextureAtlasLayout>)) -> Self {
+        Self {
+            image,
+            kind: BillboardKind::Atlas {
+                mesh_list: Vec::new(),
+                layout,
+            },
+            ..default()
+        }
+    }
+}
 
-        let pivot = self.pivot.unwrap_or(Vec2::new(0.5, 0.5));
-        // cache all the meshes for the atlas (if they haven't been already)
-        // so that we can change the index later and not have to re-create the mesh.
+// Creates a task to finish constructing the billboard after the image loads,
+// if it hasn't already been loaded.
+fn add_to_waiting_list(mut world: DeferredWorld, entity: Entity, _id: ComponentId) {
+    let task_pool = IoTaskPool::get();
+    let asset_server = world.resource::<AssetServer>().clone();
+    let billboard_h = world.get::<Sprite3dBillboard>(entity).unwrap();
+    let billboard = world.resource::<Assets<Billboard>>().get(&**billboard_h).unwrap();
+    let image_h = billboard.image.clone();
 
-        // store all lookup keys in a vec so we later know which meshes to retrieve.
-        let mut mesh_keys = Vec::new();
+    let task = task_pool.spawn(async move {
+        asset_server.wait_for_asset(&image_h).await
+    });
 
-
-        for i in 0..atlas_layout.textures.len() {
-
-            let rect = atlas_layout.textures[i];
-
-            let w = rect.width() as f32 / self.pixels_per_metre;
-            let h = rect.height() as f32 / self.pixels_per_metre;
-
-            let frac_rect = bevy::math::Rect {
-                min: Vec2::new(rect.min.x as f32 / (image_size.width as f32),
-                               rect.min.y as f32 / (image_size.height as f32)),
-
-                max: Vec2::new(rect.max.x as f32 / (image_size.width as f32),
-                               rect.max.y as f32 / (image_size.height as f32)),
-            };
-
-            let mut rect_pivot = pivot;
-
-            // scale pivot to be relative to the rect within the atlas.
-            rect_pivot.x *= frac_rect.width();
-            rect_pivot.y *= frac_rect.height();
-            rect_pivot += frac_rect.min;
+    world.resource_mut::<WaitingForLoad>().push((entity, task));
+}
 
 
-            let mesh_key = [(w * MESH_CACHE_GRANULARITY) as u32,
-                            (h * MESH_CACHE_GRANULARITY) as u32,
-                            (rect_pivot.x * MESH_CACHE_GRANULARITY) as u32,
-                            (rect_pivot.y * MESH_CACHE_GRANULARITY) as u32,
-                            self.double_sided as u32,
-                            (frac_rect.min.x * MESH_CACHE_GRANULARITY) as u32,
-                            (frac_rect.min.y * MESH_CACHE_GRANULARITY) as u32,
-                            (frac_rect.max.x * MESH_CACHE_GRANULARITY) as u32,
-                            (frac_rect.max.y * MESH_CACHE_GRANULARITY) as u32];
+// Finishes rendering the `Billboard` and transferring the associated data to the entity
+// as each image in `WaitingForLoad` finishes loading.
+#[allow(clippy::too_many_arguments)]
+fn finish_billboards(
+    images: Res<Assets<Image>>,
+    layouts: Res<Assets<TextureAtlasLayout>>,
+    mut billboards: ResMut<Assets<Billboard>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut waiting_list: ResMut<WaitingForLoad>,
+    mut sprite_query: Query<(
+        &mut Mesh3d,
+        &mut MeshMaterial3d<StandardMaterial>,
+        &Sprite3dBillboard,
+        &Sprite3d,
+    )>,
+) {
+    let mut still_waiting = Vec::new();
 
-            mesh_keys.push(mesh_key);
+    for (entity, task) in waiting_list.drain(..) {
+        // If the image is still unloaded, defer until later.
+        if !task.is_finished() {
+            still_waiting.push((entity, task));
+            continue;
+        }
 
-            // if we don't have a mesh in the cache, create it.
-            if !params.caches.mesh_cache.contains_key(&mesh_key) {
-                let mut mesh = quad( w, h, Some(pivot), self.double_sided );
-                mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, vec![
-                    [frac_rect.min.x, frac_rect.max.y],
-                    [frac_rect.max.x, frac_rect.max.y],
-                    [frac_rect.min.x, frac_rect.min.y],
-                    [frac_rect.max.x, frac_rect.min.y],
+        match block_on(poll_once(task)).unwrap() {
+            Ok(()) => (),
+            Err(asset_error) => {
+                // should this be a logged error instead?
+                panic!(
+                    "Failed to load image while making bevy_sprite3d::Billboard: {}",
+                    asset_error,
+                );
+            },
+        }
 
-                    [frac_rect.min.x, frac_rect.max.y],
-                    [frac_rect.max.x, frac_rect.max.y],
-                    [frac_rect.min.x, frac_rect.min.y],
-                    [frac_rect.max.x, frac_rect.min.y],
-                ]);
-                let mesh_h = params.meshes.add(mesh);
-                params.caches.mesh_cache.insert(mesh_key, mesh_h);
+        let (mut mesh_3d, mut material_3d, billboard_3d, sprite_3d) =
+            sprite_query.get_mut(entity).unwrap();
+        let billboard = billboards.get_mut(&billboard_3d.0).unwrap();
+
+        // If the `Billboard` has not yet had its associated mesh(es) created,
+        // then we do so here. This prevents unneceessary work if the same
+        // `Billboard` is used multiple times.
+        if !billboard.rendered {
+            let image = images.get(&billboard.image).unwrap();
+            let image_size = image.texture_descriptor.size;
+
+            match &mut billboard.kind {
+                BillboardKind::Single { mesh } => {
+                    // w & h are the world-space size of the sprite
+                    let w = (image_size.width as f32) / billboard.pixels_per_metre;
+                    let h = (image_size.height as f32) / billboard.pixels_per_metre;
+
+                    let new_mesh =
+                        quad::quad(w, h, billboard.pivot, billboard.double_sided);
+                    let mesh_handle = meshes.add(new_mesh.clone());
+                    *mesh = mesh_handle;
+                },
+                BillboardKind::Atlas { mesh_list, layout } => {
+                    let layout = layouts.get(layout).unwrap();
+                    *mesh_list = layout.textures.iter().map(|rect| {
+                        let w = rect.width() as f32 / billboard.pixels_per_metre;
+                        let h = rect.height() as f32 / billboard.pixels_per_metre;
+
+                        let frac_rect = bevy::math::Rect {
+                            min: Vec2::new(
+                                rect.min.x as f32 / (image_size.width as f32),
+                                rect.min.y as f32 / (image_size.height as f32),
+                            ),
+                            max: Vec2::new(
+                                rect.max.x as f32 / (image_size.width as f32),
+                                rect.max.y as f32 / (image_size.height as f32),
+                            ),
+                        };
+
+                        // scale pivot to be relative to the rect within the atlas
+                        let mut rect_pivot = billboard.pivot;
+                        rect_pivot.x *= frac_rect.width();
+                        rect_pivot.y *= frac_rect.height();
+                        rect_pivot += frac_rect.min;
+
+                        let mut mesh =
+                            quad::quad(w, h, billboard.pivot, billboard.double_sided);
+                        mesh.insert_attribute(
+                            Mesh::ATTRIBUTE_UV_0,
+                            vec![
+                                [frac_rect.min.x, frac_rect.max.y],
+                                [frac_rect.max.x, frac_rect.max.y],
+                                [frac_rect.min.x, frac_rect.min.y],
+                                [frac_rect.max.x, frac_rect.min.y],
+
+                                [frac_rect.min.x, frac_rect.max.y],
+                                [frac_rect.max.x, frac_rect.max.y],
+                                [frac_rect.min.x, frac_rect.min.y],
+                                [frac_rect.max.x, frac_rect.min.y],
+                            ]
+                        );
+
+                        meshes.add(mesh)
+                    }).collect();
+                },
             }
+
+            billboard.rendered = true;
         }
 
-        return Sprite3dBundle {
-            mesh: Mesh3d(params.caches.mesh_cache.get(&mesh_keys[atlas.index]).unwrap().clone()),
-            material: {
-                let mat_key = MatKey {
-                    image: self.image.clone(),
-                    alpha_mode: HashableAlphaMode(self.alpha_mode),
-                    unlit: self.unlit,
-                    emissive: reduce_colour(self.emissive),
-                };
-                MeshMaterial3d(if let Some(material) = params.caches.material_cache.get(&mat_key) { material.clone() }
-                else {
-                    let material = params.materials.add(material(self.image.clone(), self.alpha_mode, self.unlit, self.emissive));
-                    params.caches.material_cache.insert(mat_key, material.clone());
-                    material
-                })
+        // Replace the `Handle<Mesh>` stored in `Mesh3d` with the one
+        // stored in the `Billboard`.
+        match &billboard.kind {
+            BillboardKind::Single { mesh } => {
+                **mesh_3d = mesh.clone();
             },
-            sprite_3d: Sprite3d {
-                texture_atlas: Some(atlas),
-                texture_atlas_keys: Some(mesh_keys),
+            BillboardKind::Atlas { mesh_list, .. } => {
+                let atlas = sprite_3d.texture_atlas
+                    .as_ref()
+                    .expect("missing texture atlas in Sprite3d");
+                **mesh_3d = mesh_list[atlas.index].clone();
             },
         }
+
+        // Create a copy of the `StandardMaterial` associated with the entity,
+        // attach the image stored in the `Billboard`, then replace the handle
+        // stored in the `MeshMaterial3d`.
+        let mut new_material = materials.get_mut(&**material_3d).unwrap().clone();
+        new_material.base_color_texture = Some(billboard.image.clone());
+        **material_3d = materials.add(new_material);
     }
+
+    **waiting_list = still_waiting;
 }
