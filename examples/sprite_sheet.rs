@@ -36,7 +36,7 @@ fn setup(
     let material = StandardMaterial {
         alpha_mode: AlphaMode::Blend,
         unlit: true,
-        ..default()
+        ..bevy_sprite3d::utils::material()
     };
 
     // spawn the camera

@@ -1,13 +1,21 @@
-use bevy::{prelude::*, window::WindowResolution};
-use bevy::core_pipeline::bloom::Bloom;
-use bevy::core_pipeline::tonemapping::Tonemapping;
-use bevy::utils::Duration;
-use bevy::pbr::ScreenSpaceAmbientOcclusion;
-use bevy::core_pipeline::experimental::taa::TemporalAntiAliasing;
+use bevy::{
+    core_pipeline::{
+        bloom::Bloom,
+        tonemapping::Tonemapping,
+        experimental::taa::TemporalAntiAliasing,
+    },
+    pbr::ScreenSpaceAmbientOcclusion,
+    prelude::*,
+    utils::Duration,
+    window::WindowResolution,
+};
 
 use bevy_sprite3d::prelude::*;
 
-use rand::{prelude::SliceRandom, Rng};
+use rand::{
+    seq::SliceRandom,
+    Rng,
+};
 
 fn main() {
     App::new()
@@ -159,6 +167,15 @@ fn spawn_sprites(
         row.push((0,0));
     }
 
+    // all floors and walls can share a handle to the same billboard
+    let billboard_h = billboards.add(Billboard::with_texture_atlas(
+        tileset_image.clone(),
+        tileset_layout.clone(),
+        16.,
+        None,
+        false,
+    ));
+
     // might be nice to add built-in support for sprite-merging for tilemaps...
     // though since all the meshes and materials are already cached and reused,
     // I wonder how much of a speedup that'd actually be. Food for thought.
@@ -176,9 +193,7 @@ fn spawn_sprites(
 
             commands.spawn((
                 Sprite3d::from(atlas),
-                Sprite3dBillboard::new(billboards.add(
-                    Billboard::from((tileset_image.clone(), tileset_layout.clone())),
-                )),
+                Sprite3dBillboard::new(billboard_h.clone()),
                 Transform::from_xyz(x, 0.0, y)
                     .with_rotation(Quat::from_rotation_x(-std::f32::consts::PI / 2.0)),
             ));
@@ -205,14 +220,6 @@ fn spawn_sprites(
         }
     };
 
-    // all walls can share a handle to the same billboard
-    let wall_billboard = billboards.add(Billboard::with_texture_atlas(
-        tileset_image.clone(),
-        tileset_layout.clone(),
-        16.,
-        None,
-        false,
-    ));
 
     for y in 1..(map.len() - 1) {
         for x in 0..(map[y].len() - 1) {
@@ -239,7 +246,7 @@ fn spawn_sprites(
 
                 commands.spawn((
                     Sprite3d::from(atlas),
-                    Sprite3dBillboard::new(wall_billboard.clone()),
+                    Sprite3dBillboard::new(billboard_h.clone()),
                     Transform::from_xyz(x + 0.5, i as f32 + 0.499, y)
                         .with_rotation(Quat::from_rotation_y(dir * std::f32::consts::PI / 2.0))
                 ));
@@ -273,7 +280,7 @@ fn spawn_sprites(
 
                 commands.spawn((
                     Sprite3d::from(atlas),
-                    Sprite3dBillboard::new(wall_billboard.clone()),
+                    Sprite3dBillboard::new(billboard_h.clone()),
                     Transform::from_xyz(x, i as f32 + 0.499, y + 0.5)
                         .with_rotation(Quat::from_rotation_y((dir - 1.0) * std::f32::consts::PI / 2.0)),
                 ));
@@ -283,7 +290,9 @@ fn spawn_sprites(
 
     // --------------------- characters, enemies, props ---------------------
     
-    let prop_billboard = billboards.add(Billboard::with_texture_atlas(
+    // the billboard for characters and props needs to be slightly different,
+    // but we can reuse it for the fire and book as well
+    let billboard_h = billboards.add(Billboard::with_texture_atlas(
         tileset_image.clone(),
         tileset_layout.clone(),
         16.,
@@ -303,7 +312,7 @@ fn spawn_sprites(
 
             let mut c = commands.spawn((
                 Sprite3d::from(atlas),
-                Sprite3dBillboard::new(prop_billboard.clone()),
+                Sprite3dBillboard::new(billboard_h.clone()),
                 FaceCamera {},
                 Transform::from_xyz(x as f32, i as f32 + 0.498, y),
             ));
@@ -341,19 +350,11 @@ fn spawn_sprites(
 
     commands.spawn((
         Sprite3d::from(atlas),
-        Sprite3dBillboard::new(billboards.add(
-            Billboard::with_texture_atlas(
-                tileset_image.clone(),
-                tileset_layout.clone(),
-                16.,
-                None,
-                true,
-            ),
-        )),
+        Sprite3dBillboard::new(billboard_h.clone()),
         MeshMaterial3d(materials.add(StandardMaterial {
             emissive: LinearRgba::rgb(1.0, 0.5, 0.0) * 10.0,
             unlit: true,
-            ..default()
+            ..bevy_sprite3d::utils::material()
         })),
         Transform::from_xyz(2.0, 0.5, -5.5),
         Animation {
@@ -382,19 +383,11 @@ fn spawn_sprites(
 
     commands.spawn((
         Sprite3d::from(atlas),
-        Sprite3dBillboard::new(billboards.add(
-            Billboard::with_texture_atlas(
-                tileset_image.clone(),
-                tileset_layout.clone(),
-                16.,
-                None,
-                true,
-            ),
-        )),
+        Sprite3dBillboard::new(billboard_h.clone()),
         MeshMaterial3d(materials.add(StandardMaterial {
             emissive: LinearRgba::rgb(165./255., 1.0, 160./255.),
             unlit: true,
-            ..default()
+            ..bevy_sprite3d::utils::material()
         })),
         Transform::from_xyz(-5., 0.7, 6.5),
         FaceCamera {}

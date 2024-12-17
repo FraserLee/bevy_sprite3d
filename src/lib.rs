@@ -5,7 +5,6 @@ use bevy::{
         world::DeferredWorld,
     },
     prelude::*,
-    render::render_resource::Face,
     tasks::{block_on, poll_once, IoTaskPool, Task}
 };
 use uuid::Uuid;
@@ -13,6 +12,8 @@ use uuid::Uuid;
 const DEFAULT_MATERIAL_ID: Uuid = Uuid::from_u128(0xb4c3caf5ead145b985d10d8a5fc676d5_u128);
 
 pub mod prelude;
+pub mod utils;
+
 mod quad;
 
 pub struct Sprite3dPlugin;
@@ -28,21 +29,10 @@ impl Plugin for Sprite3dPlugin {
     }
 }
 
-
 fn default_material(mut standard_materials: ResMut<Assets<StandardMaterial>>) {
     standard_materials.insert(
-        AssetId::Uuid {
-            uuid: DEFAULT_MATERIAL_ID,
-        },
-        StandardMaterial {
-            cull_mode: Some(Face::Back),
-            alpha_mode: AlphaMode::Mask(0.5),
-            unlit: false,
-            perceptual_roughness: 0.5,
-            reflectance: 0.15,
-            emissive: LinearRgba::BLACK,
-            ..default()
-        },
+        AssetId::Uuid { uuid: DEFAULT_MATERIAL_ID },
+        utils::material(),
     );
 }
 
