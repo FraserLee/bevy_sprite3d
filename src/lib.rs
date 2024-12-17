@@ -324,7 +324,7 @@ fn finish_billboards(
                                 rect.min.y as f32 / (image_size.height as f32),
                             ),
                             max: Vec2::new(
-                                rect.min.x as f32 / (image_size.width as f32),
+                                rect.max.x as f32 / (image_size.width as f32),
                                 rect.max.y as f32 / (image_size.height as f32),
                             ),
                         };
