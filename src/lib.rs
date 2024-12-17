@@ -16,6 +16,7 @@ pub mod utils;
 
 mod quad;
 
+/// Holds the resources and systems necessary for a [Sprite3d] to work.
 pub struct Sprite3dPlugin;
 
 impl Plugin for Sprite3dPlugin {
@@ -104,6 +105,10 @@ struct WaitingForLoad(Vec<(Entity, Task<Result<(), WaitForAssetError>>)>);
 /// Holds the [Billboard] associated with a [Sprite3d]. Has no effect if inserted
 /// into an entity without the `Sprite3d` component. The inner `Handle<Billboard>` is
 /// private to prevent direct modification, but can be read through dereference.
+///
+/// An internal system will update the [Mesh3d] and [MeshMaterial3d] components after
+/// this component is inserted, once the [Image] associated with the `Billboard` is
+/// fully loaded.
 pub struct Sprite3dBillboard(Handle<Billboard>);
 
 impl Sprite3dBillboard {
@@ -243,8 +248,8 @@ fn add_to_waiting_list(mut world: DeferredWorld, entity: Entity, _id: ComponentI
 }
 
 
-/// Finishes rendering the `Billboard` and transferring the associated data to the entity
-/// as each image in `WaitingForLoad` finishes loading.
+// Finishes rendering the `Billboard` and transferring the associated data to the entity
+// as each image in `WaitingForLoad` finishes loading.
 #[allow(clippy::too_many_arguments)]
 fn finish_billboards(
     images: Res<Assets<Image>>,
