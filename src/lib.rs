@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use bevy::render::{ mesh::*, render_resource::*, render_asset::RenderAssetUsages};
-use bevy::utils::HashMap;
+use bevy::platform_support::collections::hash_map::HashMap;
 use std::hash::Hash;
 
 pub mod prelude;
@@ -73,15 +73,15 @@ fn reduce_colour(c: LinearRgba) -> [u8; 4] { [
 
 #[derive(Resource)]
 pub struct Sprite3dCaches {
-    pub mesh_cache: HashMap<[u32; 9], Handle<Mesh>>,
-    pub material_cache: HashMap<MatKey, Handle<StandardMaterial>>,
+    pub mesh_cache: HashMap<[u32; 9], Mesh3d>,
+    pub material_cache: HashMap<MatKey, MeshMaterial3d<StandardMaterial>>,
 }
 
 impl Default for Sprite3dCaches {
     fn default() -> Self {
         Sprite3dCaches {
-            mesh_cache: HashMap::new(),
-            material_cache: HashMap::new(),
+            mesh_cache: HashMap::with_hasher(Default::default()),
+            material_cache: HashMap::with_hasher(Default::default()),
         }
     }
 }
@@ -105,7 +105,7 @@ fn handle_texture_atlases(
             continue;
         };
 
-        **mesh = caches.mesh_cache.get(&mesh_keys[texture_atlas.index]).unwrap().clone();
+        *mesh = caches.mesh_cache.get(&mesh_keys[texture_atlas.index]).unwrap().clone();
     }
 }
 
@@ -258,7 +258,7 @@ impl Sprite3dBuilder {
         let w = (image_size.width  as f32) / self.pixels_per_metre;
         let h = (image_size.height as f32) / self.pixels_per_metre;
 
-        return Sprite3dBundle {
+        Sprite3dBundle {
             sprite_3d: Sprite3d {
                 texture_atlas: None,
                 texture_atlas_keys: None,
@@ -276,12 +276,12 @@ impl Sprite3dBuilder {
 
                 // if we have a mesh in the cache, use it.
                 // (greatly reduces number of unique meshes for tilemaps, etc.)
-                Mesh3d(if let Some(mesh) = params.caches.mesh_cache.get(&mesh_key) { mesh.clone() }
+                if let Some(mesh) = params.caches.mesh_cache.get(&mesh_key) { mesh.clone() }
                 else { // otherwise, create a new mesh and cache it.
-                    let mesh = params.meshes.add(quad( w, h, self.pivot, self.double_sided ));
+                    let mesh = Mesh3d(params.meshes.add(quad( w, h, self.pivot, self.double_sided )));
                     params.caches.mesh_cache.insert(mesh_key, mesh.clone());
                     mesh
-                })
+                }
             },
             // likewise for material, use the existing if the image is already cached.
             // (possibly look into a bool in Sprite3dBuilder to manually disable caching for an individual sprite?)
@@ -293,12 +293,12 @@ impl Sprite3dBuilder {
                     emissive: reduce_colour(self.emissive),
                 };
 
-                MeshMaterial3d(if let Some(material) = params.caches.material_cache.get(&mat_key) { material.clone() }
+                if let Some(material) = params.caches.material_cache.get(&mat_key) { material.clone() }
                 else {
-                    let material = params.materials.add(material(self.image.clone(), self.alpha_mode, self.unlit, self.emissive));
+                    let material = MeshMaterial3d(params.materials.add(material(self.image.clone(), self.alpha_mode, self.unlit, self.emissive)));
                     params.caches.material_cache.insert(mat_key, material.clone());
                     material
-                })
+                }
             },
         }
     }
@@ -370,13 +370,13 @@ impl Sprite3dBuilder {
                     [frac_rect.min.x, frac_rect.min.y],
                     [frac_rect.max.x, frac_rect.min.y],
                 ]);
-                let mesh_h = params.meshes.add(mesh);
+                let mesh_h = Mesh3d(params.meshes.add(mesh));
                 params.caches.mesh_cache.insert(mesh_key, mesh_h);
             }
         }
 
-        return Sprite3dBundle {
-            mesh: Mesh3d(params.caches.mesh_cache.get(&mesh_keys[atlas.index]).unwrap().clone()),
+        Sprite3dBundle {
+            mesh: params.caches.mesh_cache.get(&mesh_keys[atlas.index]).unwrap().clone(),
             material: {
                 let mat_key = MatKey {
                     image: self.image.clone(),
@@ -384,12 +384,12 @@ impl Sprite3dBuilder {
                     unlit: self.unlit,
                     emissive: reduce_colour(self.emissive),
                 };
-                MeshMaterial3d(if let Some(material) = params.caches.material_cache.get(&mat_key) { material.clone() }
+                if let Some(material) = params.caches.material_cache.get(&mat_key) { material.clone() }
                 else {
-                    let material = params.materials.add(material(self.image.clone(), self.alpha_mode, self.unlit, self.emissive));
+                    let material = MeshMaterial3d(params.materials.add(material(self.image.clone(), self.alpha_mode, self.unlit, self.emissive)));
                     params.caches.material_cache.insert(mat_key, material.clone());
                     material
-                })
+                }
             },
             sprite_3d: Sprite3d {
                 texture_atlas: Some(atlas),

@@ -1,7 +1,7 @@
 use bevy::{prelude::*, window::WindowResolution};
 use bevy::core_pipeline::bloom::Bloom;
 use bevy::core_pipeline::tonemapping::Tonemapping;
-use bevy::utils::Duration;
+use std::time::Duration;
 use bevy::pbr::ScreenSpaceAmbientOcclusion;
 use bevy::core_pipeline::experimental::taa::TemporalAntiAliasing;
 
@@ -438,9 +438,8 @@ const CAM_T_OFFSET: f32 = -0.4;
 
 fn animate_camera(
     time: Res<Time>,
-    mut query: Query<&mut Transform, With<Camera>>,
+    mut transform: Single<&mut Transform, With<Camera>>,
 ) {
-    let mut transform = query.single_mut();
     let time = std::f32::consts::PI - time.elapsed_secs() * CAM_SPEED + CAM_T_OFFSET;
     transform.translation.x = time.sin() * CAM_DISTANCE;
     transform.translation.y = CAM_HEIGHT;
@@ -465,10 +464,9 @@ fn animate_sprites(
 }
 
 fn face_camera(
-    cam_query: Query<&Transform, With<Camera>>,
+    cam_transform: Single<&Transform, With<Camera>>,
     mut query: Query<&mut Transform, (With<FaceCamera>, Without<Camera>)>,
 ) {
-    let cam_transform = cam_query.single();
     for mut transform in query.iter_mut() {
         let mut delta = cam_transform.translation - transform.translation;
         delta.y = 0.0;
