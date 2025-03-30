@@ -71,26 +71,11 @@ fn reduce_colour(c: LinearRgba) -> [u8; 4] { [
 ] }
 
 
-#[derive(Resource)]
+#[derive(Resource, Default)]
 pub struct Sprite3dCaches {
     pub mesh_cache: HashMap<[u32; 9], Mesh3d>,
     pub material_cache: HashMap<MatKey, MeshMaterial3d<StandardMaterial>>,
 }
-
-impl Default for Sprite3dCaches {
-    fn default() -> Self {
-        Sprite3dCaches {
-            mesh_cache: HashMap::with_hasher(Default::default()),
-            material_cache: HashMap::with_hasher(Default::default()),
-        }
-    }
-}
-
-
-
-
-
-
 
 // Update the mesh of a Sprite3d with an atlas sprite when its index changes.
 fn handle_texture_atlases(
