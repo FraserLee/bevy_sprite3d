@@ -12,7 +12,7 @@ keywords = ["gamedev", "bevy", "sprite", "3d"]
 [dependencies.bevy]
 version = "0.16.0-rc"
 default-features = false
-features = ["bevy_asset", "bevy_pbr", "bevy_sprite", "png"]
+features = ["bevy_asset", "bevy_pbr", "bevy_sprite", "png", "std"]
 
 [dev-dependencies]
 bevy.version = "0.16.0-rc" # (include default features when running examples)
