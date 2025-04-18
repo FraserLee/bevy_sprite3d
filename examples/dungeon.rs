@@ -132,7 +132,6 @@ fn setup(
 fn spawn_sprites(
     mut commands: Commands,
     images: Res<ImageAssets>,
-    mut sprite_params: Sprite3dParams,
 ) {
     // ------------------ Tilemap for the floor ------------------
 
@@ -210,12 +209,16 @@ fn spawn_sprites(
             };
 
             commands.spawn((
-                Sprite3dBuilder {
-                    image: images.image.clone(),
+                Sprite3d {
                     pixels_per_metre: 16.,
                     double_sided: false,
                     ..default()
-                }.bundle_with_atlas(&mut sprite_params, atlas),
+                },
+                Sprite {
+                    image: images.image.clone(),
+                    texture_atlas: Some(atlas),
+                    ..default()
+                },
                 Transform::from_xyz(x, 0.0, y)
                     .with_rotation(Quat::from_rotation_x(-std::f32::consts::PI / 2.0))
             ));
@@ -266,12 +269,16 @@ fn spawn_sprites(
                 };
                 
                 commands.spawn((
-                    Sprite3dBuilder {
-                        image: images.image.clone(),
+                    Sprite3d {
                         pixels_per_metre: 16.,
                         double_sided: false,
                         ..default()
-                    }.bundle_with_atlas(&mut sprite_params, atlas),
+                    },
+                    Sprite {
+                        image: images.image.clone(),
+                        texture_atlas: Some(atlas),
+                        ..default()
+                    },
                     Transform::from_xyz(x+0.5, i as f32 + 0.499, y)
                         .with_rotation(Quat::from_rotation_y(dir * std::f32::consts::PI / 2.0))
                 ));
@@ -304,12 +311,16 @@ fn spawn_sprites(
                 };
 
                 commands.spawn((
-                    Sprite3dBuilder {
-                        image: images.image.clone(),
+                    Sprite3d {
                         pixels_per_metre: 16.,
                         double_sided: false,
                         ..default()
-                    }.bundle_with_atlas(&mut sprite_params, atlas),
+                    },
+                    Sprite {
+                        image: images.image.clone(),
+                        texture_atlas: Some(atlas),
+                        ..default()
+                    },
                     Transform::from_xyz(x, i as f32 + 0.499, y + 0.5)
                         .with_rotation(Quat::from_rotation_y((dir - 1.0) * std::f32::consts::PI / 2.0)),
                 ));
@@ -330,11 +341,15 @@ fn spawn_sprites(
             };
 
             let mut c = commands.spawn((
-                Sprite3dBuilder {
-                    image: images.image.clone(),
+                Sprite3d {
                     pixels_per_metre: 16.,
                     ..default()
-                }.bundle_with_atlas(&mut sprite_params, atlas),
+                },
+                Sprite {
+                    image: images.image.clone(),
+                    texture_atlas: Some(atlas),
+                    ..default()
+                },
                 FaceCamera {},
                 Transform::from_xyz(x as f32, i as f32 + 0.498, y),
             ));
@@ -370,13 +385,17 @@ fn spawn_sprites(
         index: 30*32 + 14,
     };
 
-    commands.spawn((Sprite3dBuilder {
-            image: images.image.clone(),
+    commands.spawn((Sprite3d {
             pixels_per_metre: 16.,
             emissive: LinearRgba::rgb(1.0, 0.5, 0.0) * 10.0,
             unlit: true,
             ..default()
-        }.bundle_with_atlas(&mut sprite_params, atlas),
+        },
+        Sprite {
+            image: images.image.clone(),
+            texture_atlas: Some(atlas),
+            ..default()
+        },
         Transform::from_xyz(2.0, 0.5, -5.5),
         Animation {
             frames: vec![30*32 + 14, 30*32 + 15, 30*32 + 16],
@@ -402,13 +421,17 @@ fn spawn_sprites(
     };
 
     commands.spawn((
-        Sprite3dBuilder {
-            image: images.image.clone(),
+        Sprite3d {
             pixels_per_metre: 16.,
             emissive: LinearRgba::rgb(165./255., 1.0, 160./255.),
             unlit: true,
             ..default()
-        }.bundle_with_atlas(&mut sprite_params, atlas),
+        },
+        Sprite {
+            image: images.image.clone(),
+            texture_atlas: Some(atlas),
+            ..default()
+        },
         Transform::from_xyz(-5., 0.7, 6.5),
         FaceCamera {}
     ));
@@ -450,12 +473,12 @@ fn animate_camera(
 
 fn animate_sprites(
     time: Res<Time>,
-    mut query: Query<(&mut Animation, &mut Sprite3d)>,
+    mut query: Query<(&mut Animation, &mut Sprite)>,
 ) {
-    for (mut animation, mut sprite_3d) in query.iter_mut() {
+    for (mut animation, mut sprite) in query.iter_mut() {
         animation.timer.tick(time.delta());
         if animation.timer.just_finished() {
-            let atlas = sprite_3d.texture_atlas.as_mut().unwrap();
+            let atlas = sprite.texture_atlas.as_mut().unwrap();
             atlas.index = animation.frames[animation.current];
             animation.current += 1;
             animation.current %= animation.frames.len();
