@@ -47,14 +47,16 @@ and spawn sprites with
 fn setup(
     mut commands: Commands,
     images: Res<ImageAssets>, // this is your custom resource populated with asset handles
-    mut sprite_params: Sprite3dParams
 ) {
 
     // ----------------------- Single Static Sprite ----------------------------
 
-    commands.spawn(Sprite3d {
+    commands.spawn((
+        Sprite {
             image: images.sprite.clone(),
-
+            ..default()
+        },
+        Sprite3d {
             pixels_per_metre: 400.,
 
             partial_alpha: true,
@@ -63,11 +65,10 @@ fn setup(
 
             ..default()
 
-            // transform: Transform::from_xyz(0., 0., 0.),
             // pivot: Some(Vec2::new(0.5, 0.5)),
             // double_sided: true,
-
-    }.bundle(&mut sprite_params));
+        }
+    ));
 
     // ------------------- Texture Atlas (Sprite Sheet) ------------------------
 
@@ -76,20 +77,23 @@ fn setup(
         index: 3,
     };
 
-    commands.spawn(Sprite3d {
+    commands.spawn((
+        Sprite {
             image: images.sprite_sheet.clone(),
-
+            texture_atlas: Some(texture_atlas),
+            ..default()
+        },
+        Sprite3d {
             pixels_per_metre: 32.,
             partial_alpha: true,
             unlit: true,
 
             ..default()
 
-            // transform: Transform::from_xyz(0., 0., 0.),
             // pivot: Some(Vec2::new(0.5, 0.5)),
             // double_sided: true,
-
-    }.bundle_with_atlas(&mut sprite_params, texture_atlas));
+        }
+    ));
 }
 ```
 
