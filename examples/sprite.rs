@@ -1,52 +1,52 @@
 use bevy::prelude::*;
 use bevy_sprite3d::prelude::*;
 
-#[derive(States, Hash, Clone, PartialEq, Eq, Debug, Default)]
-enum GameState { #[default] Loading, Ready }
-
-#[derive(Resource, Default)]
-struct Assets(Handle<Image>);
-
 fn main() {
-
     App::new()
         .add_plugins(DefaultPlugins)
         .add_plugins(Sprite3dPlugin)
-        .init_state::<GameState>()
-
-        // initially load assets
-        .add_systems( Startup, |asset_server: Res<AssetServer>, mut assets: ResMut<Assets>| {
-            assets.0 = asset_server.load("icon.png");
-        } )
-
-        // run `setup` every frame while loading. Once it detects the right
-        // conditions it'll switch to the next state.
-        .add_systems( Update, setup.run_if(in_state(GameState::Loading)) )
-
-        .insert_resource(Assets::default())
+        .add_systems(Startup, setup)
         .run();
-
 }
 
 fn setup(
-    asset_server      : Res<AssetServer>,
-    assets            : Res<Assets>,
-    mut commands      : Commands,
-    mut next_state    : ResMut<NextState<GameState>>,
+    asset_server: Res<AssetServer>,
+    mut commands: Commands,
+    //mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-
-    // poll every frame to check if assets are loaded. Once they are, we can proceed with setup.
-    if !asset_server.get_load_state(assets.0.id()).is_some_and(|s| s.is_loaded()) { return; }
-
-    next_state.set(GameState::Ready);
+    let icon = asset_server.load("icon.png");
 
     // -----------------------------------------------------------------------
 
-    commands.spawn(Camera3d::default()).insert(Transform::from_xyz(0., 0., 5.));
+    commands
+        .spawn(Camera3d::default())
+        .insert(Transform::from_xyz(0., 0., 5.));
 
     // ----------------------- Spawn a 3D sprite -----------------------------
 
+    /*
+       let custom_material = materials.add(StandardMaterial {
+           base_color: Color::srgb(0.5, 0.9, 0.7),
+           perceptual_roughness: 0.9,
+           reflectance: 0.05,
+           ..default()
+       });
+    */
+
     commands.spawn((
+        Sprite {
+            image: icon,
+            /*
+            color: Color::LinearRgba(LinearRgba {
+                red: 1.0,
+                green: 0.0,
+                blue: 0.0,
+                alpha: 1.0,
+            }),
+            */
+            ..default()
+        },
+        //MeshMaterial3d(custom_material),
         Sprite3d {
             pixels_per_metre: 400.,
 
@@ -55,13 +55,8 @@ fn setup(
             unlit: true,
 
             // pivot: Some(Vec2::new(0.5, 0.5)),
-
             ..default()
         },
-        Sprite {
-            image: assets.0.clone(),
-            ..default()
-        }
     ));
 
     // -----------------------------------------------------------------------
