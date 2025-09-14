@@ -1,5 +1,9 @@
+#![cfg_attr(rustfmt, rustfmt_skip)]
+
+use bevy::mesh::*;
 use bevy::prelude::*;
-use bevy::render::{ mesh::*, render_resource::*, render_asset::RenderAssetUsages};
+use bevy::render::render_resource::*;
+use bevy::asset::RenderAssetUsages;
 use bevy::platform::collections::hash_map::HashMap;
 use std::hash::Hash;
 
