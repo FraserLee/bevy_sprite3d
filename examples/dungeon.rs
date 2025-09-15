@@ -1,9 +1,11 @@
+#![cfg_attr(rustfmt, rustfmt_skip)]
+use bevy::render::view::Hdr;
 use bevy::{prelude::*, window::WindowResolution};
-use bevy::core_pipeline::bloom::Bloom;
+use bevy::post_process::bloom::Bloom;
 use bevy::core_pipeline::tonemapping::Tonemapping;
 use std::time::Duration;
 use bevy::pbr::ScreenSpaceAmbientOcclusion;
-use bevy::core_pipeline::experimental::taa::TemporalAntiAliasing;
+use bevy::anti_alias::taa::TemporalAntiAliasing;
 
 use bevy_sprite3d::prelude::*;
 
@@ -34,7 +36,7 @@ fn main() {
             .set(ImagePlugin::default_nearest())
             .set(WindowPlugin {
                 primary_window: Some( Window{
-                    resolution: WindowResolution::new(1080.0, 1080.0 * 3./4.),
+                    resolution: WindowResolution::new(1080, (1080.0 * 3./4.) as u32),
                     ..default()
                 }), ..default()
             }))
@@ -110,10 +112,10 @@ fn setup(
     commands
         .spawn(Camera3d::default())
         .insert(Camera {
-            hdr: true,
             clear_color: ClearColorConfig::Custom(Color::NONE),
             ..default()
         })
+        .insert(Hdr)
         .insert(Msaa::Off)
         .insert(Bloom {
             intensity: 0.3,
@@ -267,7 +269,7 @@ fn spawn_sprites(
                     layout: images.layout.clone(),
                     index: (tile_x + (5 - i) * 30) as usize,
                 };
-                
+
                 commands.spawn((
                     Sprite3d {
                         pixels_per_metre: 16.,

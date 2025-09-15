@@ -106,6 +106,7 @@ ratio) in constructing the 3d mesh. Examples show how to do this with Bevy's
 
 | `bevy_sprite3d` version | `bevy` version |
 |-------------------------|----------------|
+| 7.0.0-rc                | 0.17.0-rc      |
 | 6.0                     | 0.16.0         |
 | 5.0.0                   | 0.16.0         |
 | 5.0.0-rc                | 0.16.0-rc      |
@@ -118,4 +119,3 @@ ratio) in constructing the 3d mesh. Examples show how to do this with Bevy's
 | 2.1 - 2.3               | 0.9            |
 | 1.1 - 2.0               | 0.8            |
 | 1.0                     | 0.7            |
-

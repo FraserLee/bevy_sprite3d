@@ -1,3 +1,4 @@
+#![cfg_attr(rustfmt, rustfmt_skip)]
 use bevy::prelude::*;
 use bevy_sprite3d::prelude::*;
 
