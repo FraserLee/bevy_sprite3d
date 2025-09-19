@@ -1,0 +1,16 @@
+edition = "2024"
+unstable_features = true
+
+use_small_heuristics = "Max"
+newline_style = "Unix"
+blank_lines_upper_bound = 10
+fn_single_line         = true
+struct_lit_single_line = true
+where_single_line      = true
+empty_item_single_line = true
+struct_field_align_threshold = 15
+enum_discrim_align_threshold = 15
+imports_layout = "HorizontalVertical"
+indent_style = "Visual"
+fn_params_layout = "Tall"
+brace_style = "AlwaysNextLine"

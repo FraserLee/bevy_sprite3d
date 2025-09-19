@@ -1,17 +1,16 @@
-#![cfg_attr(rustfmt, rustfmt_skip)]
+use bevy::anti_alias::taa::TemporalAntiAliasing;
+use bevy::core_pipeline::tonemapping::Tonemapping;
+use bevy::pbr::ScreenSpaceAmbientOcclusion;
+use bevy::post_process::bloom::Bloom;
 use bevy::render::view::Hdr;
 use bevy::{prelude::*, window::WindowResolution};
-use bevy::post_process::bloom::Bloom;
-use bevy::core_pipeline::tonemapping::Tonemapping;
 use std::time::Duration;
-use bevy::pbr::ScreenSpaceAmbientOcclusion;
-use bevy::anti_alias::taa::TemporalAntiAliasing;
 
 use bevy_sprite3d::prelude::*;
 
 use rand::{prelude::SliceRandom, Rng};
 
-#[derive(States, Hash, Clone, PartialEq, Eq, Debug, Default)]
+#[derive(States, Hash, Clone, PartialEq, Eq, Debug, Default)] #[rustfmt::skip]
 enum GameState { #[default] Loading, Ready }
 
 // #[derive(AssetCollection, Resource)]
@@ -23,14 +22,16 @@ enum GameState { #[default] Loading, Ready }
 //     tileset: Handle<TextureAtlas>,
 // }
 #[derive(Resource, Default)]
-struct ImageAssets {
-    image: Handle<Image>,
+struct ImageAssets
+{
+    image:  Handle<Image>,
     layout: Handle<TextureAtlasLayout>,
 }
 
 
-fn main() {
-
+#[rustfmt::skip]
+fn main()
+{
     App::new()
         .add_plugins(DefaultPlugins
             .set(ImagePlugin::default_nearest())
@@ -84,29 +85,26 @@ fn main() {
 struct FaceCamera; // tag entity to make it always face the camera
 
 #[derive(Component)]
-struct Animation {
-    frames: Vec<usize>, // indices of all the frames in the animation
+struct Animation
+{
+    frames:  Vec<usize>, // indices of all the frames in the animation
     current: usize,
-    timer: Timer,
+    timer:   Timer,
 }
 
-fn setup(
-    mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-) {
+#[rustfmt::skip]
+fn setup(mut commands: Commands,
+         mut meshes: ResMut<Assets<Mesh>>,
+         mut materials: ResMut<Assets<StandardMaterial>>)
+{
     // cube
-    commands.spawn((
-        Mesh3d(meshes.add(Mesh::from(Cuboid::from_size(Vec3::splat(1.0))))),
-        MeshMaterial3d(materials.add(Color::WHITE)),
-        Transform::from_xyz(-0.9, 0.5, -3.1),
-    ));
+    commands.spawn((Mesh3d(meshes.add(Mesh::from(Cuboid::from_size(Vec3::splat(1.0))))),
+                    MeshMaterial3d(materials.add(Color::WHITE)),
+                    Transform::from_xyz(-0.9, 0.5, -3.1)));
     // sphere
-    commands.spawn((
-        Mesh3d(meshes.add(Sphere::new(0.6))),
-        MeshMaterial3d(materials.add(Color::WHITE)),
-        Transform::from_xyz(-0.9, 0.5, -4.2),
-    ));
+    commands.spawn((Mesh3d(meshes.add(Sphere::new(0.6))),
+                    MeshMaterial3d(materials.add(Color::WHITE)),
+                    Transform::from_xyz(-0.9, 0.5, -4.2)));
 
     // camera
     commands
@@ -131,42 +129,42 @@ fn setup(
     commands.spawn(Tonemapping::AcesFitted);
 }
 
-fn spawn_sprites(
-    mut commands: Commands,
-    images: Res<ImageAssets>,
-) {
+#[rustfmt::skip]
+fn spawn_sprites(mut commands: Commands, images: Res<ImageAssets>)
+{
     // ------------------ Tilemap for the floor ------------------
 
     // we first set up a few closures to help generate variations of tiles
 
     // random floor tile
-    let options_f = [(7,0), (7,0), (7,0), (9,1), (9,2), (9,3), (9,4)];
-    let f = || { *options_f.choose(&mut rand::thread_rng()).unwrap() };
+    let options_f = [(7, 0), (7, 0), (7, 0), (9, 1), (9, 2), (9, 3), (9, 4)];
+    let f = || *options_f.choose(&mut rand::thread_rng()).unwrap();
 
-    let options_d = [(9,9), (9,10), (9,11)]; // random darker floor tile
-    let d = || { *options_d.choose(&mut rand::thread_rng()).unwrap() };
+    let options_d = [(9, 9), (9, 10), (9, 11)]; // random darker floor tile
+    let d = || *options_d.choose(&mut rand::thread_rng()).unwrap();
 
-    let options_l = [(7,5), (7,6), (7,7)]; // left wall tile
-    let l = || { *options_l.choose(&mut rand::thread_rng()).unwrap() };
-    let options_t = [(7,8), (7,9), (7,10)]; // top wall tile
-    let t = || { *options_t.choose(&mut rand::thread_rng()).unwrap() };
-    let options_b = [(7,11), (7,12), (7,13)]; // bottom wall tile
-    let b = || { *options_b.choose(&mut rand::thread_rng()).unwrap() };
-    let options_r = [(7,14), (7,15), (7,16)]; // right wall tile
-    let r = || { *options_r.choose(&mut rand::thread_rng()).unwrap() };
+    let options_l = [(7, 5), (7, 6), (7, 7)]; // left wall tile
+    let l = || *options_l.choose(&mut rand::thread_rng()).unwrap();
+    let options_t = [(7, 8), (7, 9), (7, 10)]; // top wall tile
+    let t = || *options_t.choose(&mut rand::thread_rng()).unwrap();
+    let options_b = [(7, 11), (7, 12), (7, 13)]; // bottom wall tile
+    let b = || *options_b.choose(&mut rand::thread_rng()).unwrap();
+    let options_r = [(7, 14), (7, 15), (7, 16)]; // right wall tile
+    let r = || *options_r.choose(&mut rand::thread_rng()).unwrap();
 
-    let tl = || { (7,1) }; // top left corner
-    let tr = || { (7,2) }; // top right corner
-    let bl = || { (7,3) }; // bottom left corner
-    let br = || { (7,4) }; // bottom right corner
+    let tl = || (7, 1); // top left corner
+    let tr = || (7, 2); // top right corner
+    let bl = || (7, 3); // bottom left corner
+    let br = || (7, 4); // bottom right corner
 
-    let options_tb = [(7,21), (7,22)]; // top and bottom wall tile
-    let tb = || { *options_tb.choose(&mut rand::thread_rng()).unwrap() };
+    let options_tb = [(7, 21), (7, 22)]; // top and bottom wall tile
+    let tb = || *options_tb.choose(&mut rand::thread_rng()).unwrap();
 
     // in reality, you'd probably want to import a map generated by an
     // external tool, or maybe proc-gen it yourself. For this example, a
     // 2d array should suffice.
 
+    #[rustfmt::skip]
     let mut map = vec![
         vec![(0,0), (0,0), (0,0), (0,0), (0,0), tl(),  t(),   d(),   d(),   d(),   t(),   tr() ],
         vec![(0,0), (0,0), (0,0), (0,0), (0,0), l(),   f(),   f(),   f(),   f(),   f(),   r()  ],
@@ -188,11 +186,11 @@ fn spawn_sprites(
     ];
 
     // add zero padding to the map
-    map.insert(0, vec![(0,0); map[0].len()]);
-    map.push(vec![(0,0); map[0].len()]);
+    map.insert(0, vec![(0, 0); map[0].len()]);
+    map.push(vec![(0, 0); map[0].len()]);
     for row in map.iter_mut() {
-        row.insert(0, (0,0));
-        row.push((0,0));
+        row.insert(0, (0, 0));
+        row.push((0, 0));
     }
 
     // might be nice to add built-in support for sprite-merging for tilemaps...
@@ -202,8 +200,11 @@ fn spawn_sprites(
     for y in 0..map.len() {
         for x in 0..map[y].len() {
             let index = map[y][x].0 * 30 + map[y][x].1;
-            let (x, y) = (x as f32 - map[y].len() as f32 / 2.0, y as f32 - map.len() as f32 / 2.0);
-            if index == 0 { continue; }
+            let x = x as f32 - map[y].len() as f32 / 2.0;
+            let y = y as f32 - map.len() as f32 / 2.0;
+            if index == 0 {
+                continue;
+            }
 
             let atlas = TextureAtlas {
                 layout: images.layout.clone(),
@@ -249,20 +250,23 @@ fn spawn_sprites(
 
     for y in 1..(map.len() - 1) {
         for x in 0..(map[y].len() - 1) {
-            if (map[y][x] != (0,0)) ^ (map[y][x+1] == (0,0)) { continue; }
-            let dir = if map[y][x] == (0,0) { 1.0 } else { -1.0 };
+            if (map[y][x] != (0, 0)) ^ (map[y][x + 1] == (0, 0)) {
+                continue;
+            }
+            let dir = if map[y][x] == (0, 0) { 1.0 } else { -1.0 };
 
             let mut tile_x = wall_index();
 
-            if map[y][x] == (0,0) { // literal corner cases. hah.
-                if map[y+1][x+1] == (0,0) { tile_x = 0; }
-                if map[y-1][x+1] == (0,0) { tile_x = 5; }
+            if map[y][x] == (0, 0) { // literal corner cases. hah.
+                if map[y + 1][x + 1] == (0, 0) { tile_x = 0; }
+                if map[y - 1][x + 1] == (0, 0) { tile_x = 5; }
             } else {
-                if map[y-1][x] == (0,0) { tile_x = 0; }
-                if map[y+1][x] == (0,0) { tile_x = 5; }
+                if map[y - 1][x] == (0, 0) { tile_x = 0; }
+                if map[y + 1][x] == (0, 0) { tile_x = 5; }
             }
 
-            let (x, y) = (x as f32 - map[y].len() as f32 / 2.0, y as f32 - map.len() as f32 / 2.0);
+            let x = x as f32 - map[y].len() as f32 / 2.0;
+            let y = y as f32 - map.len() as f32 / 2.0;
 
             for i in [0,1] { // add bottom and top piece
                 let atlas = TextureAtlas {
@@ -291,22 +295,25 @@ fn spawn_sprites(
     // same thing again, but for the vertical walls
     for x in 1..(map[0].len() - 1) {
         for y in 0..(map.len() - 1) {
-            if (map[y][x] != (0,0)) ^ (map[y+1][x] == (0,0)) { continue; }
-            let dir = if map[y][x] == (0,0) { 1.0 } else { -1.0 };
+            if (map[y][x] != (0, 0)) ^ (map[y + 1][x] == (0, 0)) {
+                continue;
+            }
+            let dir = if map[y][x] == (0, 0) { 1.0 } else { -1.0 };
 
             let mut tile_x = wall_index();
 
-            if map[y][x] == (0,0) {
-                if map[y+1][x-1] == (0,0) { tile_x = 0; }
-                if map[y+1][x+1] == (0,0) { tile_x = 5; }
+            if map[y][x] == (0, 0) {
+                if map[y + 1][x - 1] == (0, 0) { tile_x = 0; }
+                if map[y + 1][x + 1] == (0, 0) { tile_x = 5; }
             } else {
-                if map[y][x+1] == (0,0) { tile_x = 0; }
-                if map[y][x-1] == (0,0) { tile_x = 5; }
+                if map[y][x + 1] == (0, 0) { tile_x = 0; }
+                if map[y][x - 1] == (0, 0) { tile_x = 5; }
             }
 
-            let (x, y) = (x as f32 - map[y].len() as f32 / 2.0, y as f32 - map.len() as f32 / 2.0);
+            let x = x as f32 - map[y].len() as f32 / 2.0;
+            let y = y as f32 - map.len() as f32 / 2.0;
 
-            for i in [0,1]{ // add bottom and top piece
+            for i in [0, 1] { // add bottom and top piece
                 let atlas = TextureAtlas {
                     layout: images.layout.clone(),
                     index: (tile_x + (5 - i) * 30) as usize,
@@ -369,17 +376,17 @@ fn spawn_sprites(
     // 3 humans
     entity((4.5, -4.0), 8, 27, 2, 2);
     entity((1.5, -7.0), 4, 27, 2, 2);
-    entity((0.5, 2.0),  6, 27, 2, 2);
+    entity((0.5, 2.0), 6, 27, 2, 2);
 
     // 5 containers
-    entity((3.5, 1.0),  0, 19, 1, 1);
-    entity((4.0, 6.0),  1, 19, 1, 1);
-    entity((0.0, 5.0),  4, 19, 1, 1);
-    entity((-4.0, 5.5),  5, 19, 1, 1);
-    entity((-0.5, -8.5),  2, 19, 1, 1);
+    entity((3.5, 1.0), 0, 19, 1, 1);
+    entity((4.0, 6.0), 1, 19, 1, 1);
+    entity((0.0, 5.0), 4, 19, 1, 1);
+    entity((-4.0, 5.5), 5, 19, 1, 1);
+    entity((-0.5, -8.5), 2, 19, 1, 1);
 
     // ikea chair
-    entity((4.2, -8.),  13, 16, 2, 1);
+    entity((4.2, -8.), 13, 16, 2, 1);
 
     // fire
     let atlas = TextureAtlas {
@@ -461,10 +468,8 @@ const CAM_TARGET_Z: f32 = -5.5;
 
 const CAM_T_OFFSET: f32 = -0.4;
 
-fn animate_camera(
-    time: Res<Time>,
-    mut transform: Single<&mut Transform, With<Camera>>,
-) {
+fn animate_camera(time: Res<Time>, mut transform: Single<&mut Transform, With<Camera>>)
+{
     let time = std::f32::consts::PI - time.elapsed_secs() * CAM_SPEED + CAM_T_OFFSET;
     transform.translation.x = time.sin() * CAM_DISTANCE;
     transform.translation.y = CAM_HEIGHT;
@@ -473,10 +478,8 @@ fn animate_camera(
 }
 
 
-fn animate_sprites(
-    time: Res<Time>,
-    mut query: Query<(&mut Animation, &mut Sprite)>,
-) {
+fn animate_sprites(time: Res<Time>, mut query: Query<(&mut Animation, &mut Sprite)>)
+{
     for (mut animation, mut sprite) in query.iter_mut() {
         animation.timer.tick(time.delta());
         if animation.timer.just_finished() {
@@ -488,9 +491,11 @@ fn animate_sprites(
     }
 }
 
+
+#[rustfmt::skip]
 fn face_camera(
     cam_transform: Single<&Transform, With<Camera>>,
-    mut query: Query<&mut Transform, (With<FaceCamera>, Without<Camera>)>,
+    mut query: Query<&mut Transform, (With<FaceCamera>, Without<Camera>)>
 ) {
     for mut transform in query.iter_mut() {
         let mut delta = cam_transform.translation - transform.translation;
