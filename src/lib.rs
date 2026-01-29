@@ -1,9 +1,17 @@
 use bevy::asset::RenderAssetUsages;
+use bevy::ecs::lifecycle::HookContext;
+use bevy::ecs::world::DeferredWorld;
+
 use bevy::mesh::*;
 use bevy::platform::collections::hash_map::HashMap;
 use bevy::prelude::*;
 use bevy::render::render_resource::*;
 use std::hash::Hash;
+
+use bevy::{
+    asset::WaitForAssetError,
+    tasks::{block_on, poll_once, IoTaskPool, Task},
+};
 
 pub mod prelude;
 
@@ -12,11 +20,14 @@ pub struct Sprite3dPlugin;
 impl Plugin for Sprite3dPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Sprite3dCaches>();
+        app.init_resource::<WaitingSprites>();
         app.add_systems(
             PostUpdate,
-            (bundle_builder, (
-                handle_texture_atlases, handle_images
-            ).after(bundle_builder))
+            (
+                finalize_waiting_sprites,
+                bundle_builder.after(finalize_waiting_sprites),
+                (handle_texture_atlases, handle_images).after(bundle_builder),
+            )
         );
     }
 }
@@ -32,6 +43,7 @@ pub struct MatKey
     alpha_mode: HashableAlphaMode,
     unlit:      bool,
     emissive:   [u8; 4],
+    base_color: [u8; 4],
     flip_x:     bool,
     flip_y:     bool,
 }
@@ -69,6 +81,8 @@ fn reduce_colour(c: LinearRgba) -> [u8; 4] { [
         (c.alpha * 255.) as u8,
 ] }
 
+fn reduce_color_from_bevy(c: Color) -> [u8; 4] { reduce_colour(c.to_linear()) }
+
 
 #[derive(Resource, Default)]
 pub struct Sprite3dCaches
@@ -77,6 +91,15 @@ pub struct Sprite3dCaches
     pub material_cache: HashMap<MatKey, MeshMaterial3d<StandardMaterial>>,
 }
 
+/// Resource holding tasks for entities waiting on assets to load.
+#[derive(Resource, Default)]
+struct WaitingSprites(Vec<(Entity, Task<Result<(), WaitForAssetError>>)>);
+
+/// Marker component: user supplied a material BEFORE Sprite3d was inserted,
+/// so we preserve most fields and skip caching.
+#[derive(Component)]
+pub struct Sprite3dUserMaterial;
+
 #[rustfmt::skip]
 fn bundle_builder(mut commands: Commands,
                   images: Res<Assets<Image>>,
@@ -84,6 +107,9 @@ fn bundle_builder(mut commands: Commands,
                   mut meshes: ResMut<Assets<Mesh>>,
                   mut materials: ResMut<Assets<StandardMaterial>>,
                   atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
+                  asset_server: Res<AssetServer>,
+                  mut waiting: ResMut<WaitingSprites>,
+                  user_materials: Query<(), With<Sprite3dUserMaterial>>,
                   mut query: Query<(&mut Sprite3d,
                          &mut Mesh3d,
                          &mut MeshMaterial3d<StandardMaterial>,
@@ -92,6 +118,29 @@ fn bundle_builder(mut commands: Commands,
                         With<Sprite3dBuilder>>)
 {
     for (mut sprite3d, mut mesh, mut mat, sprite, e) in query.iter_mut() {
+        // Check if assets are ready; if not, defer construction.
+        let image_ready = images.get(&sprite.image).is_some();
+        let (atlas_ready, layout_handle) = if let Some(atlas) = &sprite.texture_atlas {
+            (atlas_layouts.get(&atlas.layout).is_some(), Some(atlas.layout.clone()))
+        } else {
+            (true, None)
+        };
+
+        if !(image_ready && atlas_ready) {
+            let image_h = sprite.image.clone();
+            let layout_h = layout_handle;
+            let server = asset_server.clone();
+            let task = IoTaskPool::get().spawn(async move {
+                server.wait_for_asset(&image_h).await?;
+                if let Some(l) = layout_h {
+                    server.wait_for_asset(&l).await?;
+                }
+                Ok(())
+            });
+            waiting.0.push((e, task));
+            continue;
+        }
+
         // get image dimensions
         let image_size = images.get(&sprite.image).unwrap().texture_descriptor.size;
         // w & h are the world-space size of the sprite.
@@ -137,7 +186,9 @@ fn bundle_builder(mut commands: Commands,
                                 (frac_rect.max.x * MESH_CACHE_GRANULARITY) as u32,
                                 (frac_rect.max.y * MESH_CACHE_GRANULARITY) as u32];
 
-                sprite3d.texture_atlas_keys.push(mesh_key);
+                if sprite3d.texture_atlas_keys.last().copied() != Some(mesh_key) {
+                    sprite3d.texture_atlas_keys.push(mesh_key);
+                }
 
                 // if we don't have a mesh in the cache, create it.
                 if !caches.mesh_cache.contains_key(&mesh_key) {
@@ -163,7 +214,9 @@ fn bundle_builder(mut commands: Commands,
                             (pivot.y * MESH_CACHE_GRANULARITY) as u32,
                             sprite3d.double_sided as u32,
                             0, 0, 0, 0];
-            sprite3d.texture_atlas_keys.push(mesh_key);
+            if sprite3d.texture_atlas_keys.last().copied() != Some(mesh_key) {
+                sprite3d.texture_atlas_keys.push(mesh_key);
+            }
         }
 
         *mesh = {
@@ -186,60 +239,248 @@ fn bundle_builder(mut commands: Commands,
             }
         };
 
-        // likewise for material, use the existing if the image is already cached.
-        // (possibly look into a bool in Sprite3dBuilder to manually disable caching for an individual sprite?)
-        *mat = {
+        // Material handling: if user supplied a material prior to Sprite3d, preserve & modify minimal fields.
+        if user_materials.get(e).is_ok() {
+            if let Some(existing) = materials.get_mut(&mat.0) {
+                existing.base_color_texture = Some(sprite.image.clone());
+                if sprite3d.alpha_mode != DEFAULT_ALPHA_MODE {
+                    existing.alpha_mode = sprite3d.alpha_mode;
+                }
+                if sprite3d.unlit {
+                    existing.unlit = true;
+                }
+                if sprite3d.emissive != LinearRgba::BLACK {
+                    existing.emissive = sprite3d.emissive;
+                }
+                if sprite.flip_x || sprite.flip_y {
+                    existing.flip(sprite.flip_x, sprite.flip_y);
+                }
+            }
+        } else {
+            // Cached / new material path; base_color from Sprite.color for tint.
+            let base_colour_arr = reduce_color_from_bevy(sprite.color);
             let mat_key = MatKey { image:      sprite.image.clone(),
                                    alpha_mode: HashableAlphaMode(sprite3d.alpha_mode),
                                    unlit:      sprite3d.unlit,
                                    emissive:   reduce_colour(sprite3d.emissive),
+                                   base_color: base_colour_arr,
                                    flip_x:     sprite.flip_x,
                                    flip_y:     sprite.flip_y, };
-            if let Some(material) = caches.material_cache.get(&mat_key) {
+            *mat = if let Some(material) = caches.material_cache.get(&mat_key) {
                 material.clone()
             } else {
-                let material = MeshMaterial3d(materials.add(build_material(sprite.image.clone(), sprite3d.alpha_mode, sprite3d.unlit, sprite3d.emissive, sprite.flip_x, sprite.flip_y)));
-                caches.material_cache.insert(mat_key, material.clone());
-                material
-            }
-        };
+                let mut new_mat = build_material(sprite.image.clone(), sprite3d.alpha_mode, sprite3d.unlit, sprite3d.emissive, sprite.flip_x, sprite.flip_y);
+                new_mat.base_color = sprite.color;
+                let handle = MeshMaterial3d(materials.add(new_mat));
+                caches.material_cache.insert(mat_key, handle.clone());
+                handle
+            };
+        }
 
         commands.entity(e).remove::<Sprite3dBuilder>();
     }
 }
+
+
+/// Finalize deferred sprites once their async asset-load tasks complete.
+#[rustfmt::skip]
+fn finalize_waiting_sprites(
+    mut commands: Commands,
+    images: Res<Assets<Image>>,
+    mut caches: ResMut<Sprite3dCaches>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
+    mut waiting: ResMut<WaitingSprites>,
+    user_materials: Query<(), With<Sprite3dUserMaterial>>,
+    mut query: Query<(&mut Sprite3d,
+           &mut Mesh3d,
+           &mut MeshMaterial3d<StandardMaterial>,
+           &Sprite,
+           Entity),
+          With<Sprite3dBuilder>>)
+{
+    let mut still_waiting = Vec::new();
+    for (entity, task) in waiting.0.drain(..) {
+        if !task.is_finished() {
+            still_waiting.push((entity, task));
+            continue;
+        }
+        match block_on(poll_once(task)) {
+            Some(Ok(())) => {}
+            Some(Err(e)) => {
+                bevy::log::warn!("Sprite3d asset load failed: {e}");
+                continue;
+            }
+            None => continue,
+        }
+
+        let Ok((mut sprite3d, mut mesh, mut mat, sprite, e)) = query.get_mut(entity) else {
+            continue;
+        };
+
+        let Some(img) = images.get(&sprite.image) else { continue };
+        let image_size = img.texture_descriptor.size;
+        let w = (image_size.width as f32) / sprite3d.pixels_per_metre;
+        let h = (image_size.height as f32) / sprite3d.pixels_per_metre;
+        let pivot = sprite3d.pivot.unwrap_or(Vec2::new(0.5, 0.5));
+
+        if let Some(atlas) = &sprite.texture_atlas {
+            let Some(atlas_layout) = atlas_layouts.get(&atlas.layout) else { continue };
+            for rect in &atlas_layout.textures {
+                let w = rect.width() as f32 / sprite3d.pixels_per_metre;
+                let h = rect.height() as f32 / sprite3d.pixels_per_metre;
+                let frac_rect = bevy::math::Rect {
+                    min: Vec2::new(rect.min.x as f32 / (image_size.width as f32),
+                                   rect.min.y as f32 / (image_size.height as f32)),
+                    max: Vec2::new(rect.max.x as f32 / (image_size.width as f32),
+                                   rect.max.y as f32 / (image_size.height as f32)),
+                };
+                let mut rect_pivot = pivot;
+                rect_pivot.x *= frac_rect.width();
+                rect_pivot.y *= frac_rect.height();
+                rect_pivot += frac_rect.min;
+                let mesh_key = [(w * MESH_CACHE_GRANULARITY) as u32,
+                                (h * MESH_CACHE_GRANULARITY) as u32,
+                                (rect_pivot.x * MESH_CACHE_GRANULARITY) as u32,
+                                (rect_pivot.y * MESH_CACHE_GRANULARITY) as u32,
+                                sprite3d.double_sided as u32,
+                                (frac_rect.min.x * MESH_CACHE_GRANULARITY) as u32,
+                                (frac_rect.min.y * MESH_CACHE_GRANULARITY) as u32,
+                                (frac_rect.max.x * MESH_CACHE_GRANULARITY) as u32,
+                                (frac_rect.max.y * MESH_CACHE_GRANULARITY) as u32];
+                sprite3d.texture_atlas_keys.push(mesh_key);
+                if !caches.mesh_cache.contains_key(&mesh_key) {
+                    let mut m = quad(w, h, Some(pivot), sprite3d.double_sided);
+                    m.insert_attribute(Mesh::ATTRIBUTE_UV_0,
+                                       vec![[frac_rect.min.x, frac_rect.max.y],
+                                            [frac_rect.max.x, frac_rect.max.y],
+                                            [frac_rect.min.x, frac_rect.min.y],
+                                            [frac_rect.max.x, frac_rect.min.y],
+                                            [frac_rect.min.x, frac_rect.max.y],
+                                            [frac_rect.max.x, frac_rect.max.y],
+                                            [frac_rect.min.x, frac_rect.min.y],
+                                            [frac_rect.max.x, frac_rect.min.y],]);
+                    let mesh_h = Mesh3d(meshes.add(m));
+                    caches.mesh_cache.insert(mesh_key, mesh_h);
+                }
+            }
+        } else {
+            let mesh_key = [(w * MESH_CACHE_GRANULARITY) as u32,
+                            (h * MESH_CACHE_GRANULARITY) as u32,
+                            (pivot.x * MESH_CACHE_GRANULARITY) as u32,
+                            (pivot.y * MESH_CACHE_GRANULARITY) as u32,
+                            sprite3d.double_sided as u32,
+                            0, 0, 0, 0];
+            sprite3d.texture_atlas_keys.push(mesh_key);
+        }
+
+        *mesh = {
+            let mesh_key = if let Some(atlas) = &sprite.texture_atlas {
+                sprite3d.texture_atlas_keys[atlas.index]
+            } else {
+                *sprite3d.texture_atlas_keys.first().unwrap()
+            };
+            if let Some(m) = caches.mesh_cache.get(&mesh_key) {
+                m.clone()
+            } else {
+                let m = Mesh3d(meshes.add(quad(w, h, sprite3d.pivot, sprite3d.double_sided)));
+                caches.mesh_cache.insert(mesh_key, m.clone());
+                m
+            }
+        };
+
+        if user_materials.get(e).is_ok() {
+            if let Some(existing) = materials.get_mut(&mat.0) {
+                existing.base_color_texture = Some(sprite.image.clone());
+                if sprite3d.alpha_mode != DEFAULT_ALPHA_MODE {
+                    existing.alpha_mode = sprite3d.alpha_mode;
+                }
+                if sprite3d.unlit {
+                    existing.unlit = true;
+                }
+                if sprite3d.emissive != LinearRgba::BLACK {
+                    existing.emissive = sprite3d.emissive;
+                }
+                if sprite.flip_x || sprite.flip_y {
+                    existing.flip(sprite.flip_x, sprite.flip_y);
+                }
+            }
+        } else {
+            let base_colour_arr = reduce_color_from_bevy(sprite.color);
+            let mat_key = MatKey { image:      sprite.image.clone(),
+                                   alpha_mode: HashableAlphaMode(sprite3d.alpha_mode),
+                                   unlit:      sprite3d.unlit,
+                                   emissive:   reduce_colour(sprite3d.emissive),
+                                   base_color: base_colour_arr,
+                                   flip_x:     sprite.flip_x,
+                                   flip_y:     sprite.flip_y, };
+            *mat = if let Some(material) = caches.material_cache.get(&mat_key) {
+                material.clone()
+            } else {
+                let mut new_mat = build_material(sprite.image.clone(), sprite3d.alpha_mode, sprite3d.unlit, sprite3d.emissive, sprite.flip_x, sprite.flip_y);
+                new_mat.base_color = sprite.color;
+                let handle = MeshMaterial3d(materials.add(new_mat));
+                caches.material_cache.insert(mat_key, handle.clone());
+                handle
+            };
+        }
+
+        commands.entity(e).remove::<Sprite3dBuilder>();
+    }
+    waiting.0 = still_waiting;
+}
+
 
 // Update the mesh when sprite image change
 #[rustfmt::skip]
 fn handle_images(
     mut caches: ResMut<Sprite3dCaches>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    mut query: Query<(&mut MeshMaterial3d<StandardMaterial>, &Sprite, &Sprite3d), Changed<Sprite>>)
+    mut query: Query<(Entity,
+                      &mut MeshMaterial3d<StandardMaterial>,
+                      &Sprite,
+                      &Sprite3d,
+                      Option<&Sprite3dUserMaterial>),
+                     Changed<Sprite>>)
 {
-    for (mut mesh_mat, sprite, sprite_3d) in query.iter_mut() {
+    for (entity, mut mesh_mat, sprite, sprite_3d, user_flag) in query.iter_mut() {
+        if user_flag.is_some() {
+            if let Some(existing) = materials.get_mut(&mesh_mat.0) {
+                existing.base_color_texture = Some(sprite.image.clone());
+                if sprite_3d.alpha_mode != DEFAULT_ALPHA_MODE {
+                    existing.alpha_mode = sprite_3d.alpha_mode;
+                }
+                if sprite_3d.unlit {
+                    existing.unlit = true;
+                }
+                if sprite_3d.emissive != LinearRgba::BLACK {
+                    existing.emissive = sprite_3d.emissive;
+                }
+                if sprite.flip_x || sprite.flip_y {
+                    existing.flip(sprite.flip_x, sprite.flip_y);
+                }
+            } else {
+                bevy::log::warn!("Sprite3d: user material asset for entity {:?} missing when updating image", entity);
+            }
+            continue;
+        }
+
         let mat_key = MatKey { image:      sprite.image.clone(),
                                alpha_mode: HashableAlphaMode(sprite_3d.alpha_mode),
                                unlit:      sprite_3d.unlit,
                                emissive:   reduce_colour(sprite_3d.emissive),
+                               base_color: reduce_color_from_bevy(sprite.color),
                                flip_x:     sprite.flip_x,
                                flip_y:     sprite.flip_y, };
         let mat = if let Some(material) = caches.material_cache.get(&mat_key) {
             material.clone()
         } else {
-            #[rustfmt::skip]
-            let material = MeshMaterial3d(
-                materials.add(
-                    build_material(
-                        sprite.image.clone(),
-                        sprite_3d.alpha_mode,
-                        sprite_3d.unlit,
-                        sprite_3d.emissive,
-                        sprite.flip_x,
-                        sprite.flip_y
-                    )
-                )
-            );
-            caches.material_cache.insert(mat_key, material.clone());
-            material
+            let mut base = build_material(sprite.image.clone(), sprite_3d.alpha_mode, sprite_3d.unlit, sprite_3d.emissive, sprite.flip_x, sprite.flip_y);
+            base.base_color = sprite.color;
+            let material_h = MeshMaterial3d(materials.add(base));
+            caches.material_cache.insert(mat_key, material_h.clone());
+            material_h
         };
 
         if *mesh_mat != mat {
@@ -355,7 +596,8 @@ struct Sprite3dBuilder;
 /// `texture_atlas` and `texture_atlas_keys` on an already spawned sprite may
 /// cause buggy behavior.
 #[derive(Component)]
-#[require(Transform, Mesh3d, MeshMaterial3d<StandardMaterial>, Sprite3dBuilder)]
+#[require(Transform, Mesh3d, Sprite3dBuilder)]
+#[component(on_insert = sprite3d_on_insert)]
 pub struct Sprite3d
 {
     pub texture_atlas_keys: Vec<[u32; 9]>,
@@ -391,6 +633,20 @@ pub struct Sprite3d
     /// `true` (default) adds a second set of indices, describing the same tris
     /// in reverse order.
     pub double_sided: bool,
+}
+
+/// On-insert hook to detect user-provided material & insert default if needed.
+fn sprite3d_on_insert(mut world: DeferredWorld, ctx: HookContext)
+{
+    let entity = ctx.entity;
+    if world.get::<MeshMaterial3d<StandardMaterial>>(entity).is_some() {
+        // User supplied a material before Sprite3d; mark it.
+        world.commands().entity(entity).insert(Sprite3dUserMaterial);
+    } else {
+        // No user material: insert via #[require] would create default, but we need
+        // the component present for bundle_builder query. Use deferred insert.
+        world.commands().entity(entity).insert(MeshMaterial3d::<StandardMaterial>::default());
+    }
 }
 
 impl Default for Sprite3d
