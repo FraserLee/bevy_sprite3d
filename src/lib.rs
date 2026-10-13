@@ -1,6 +1,6 @@
-use bevy::asset::RenderAssetUsages;
+use bevy::asset::{LoadState, RenderAssetUsages, UntypedAssetId};
 use bevy::mesh::*;
-use bevy::platform::collections::hash_map::HashMap;
+use bevy::platform::collections::HashMap;
 use bevy::prelude::*;
 use bevy::render::render_resource::*;
 use std::hash::Hash;
@@ -132,10 +132,19 @@ fn sprite_material(sprite3d: &Sprite3d,
     }).clone()
 }
 
+fn assert_loadable(asset_server: &AssetServer, id: impl Into<UntypedAssetId>, e: Entity)
+{
+    if let Some(LoadState::Failed(err)) = asset_server.get_load_state(id) {
+        panic!("bevy_sprite3d: an asset used by sprite {e} failed to load: {err}");
+    }
+}
+
 // Assign mesh and material to every sprite that is new, changed, or still
 // waiting on its assets.
 #[rustfmt::skip]
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn sync_sprites(mut commands: Commands,
+                asset_server: Res<AssetServer>,
                 images: Res<Assets<Image>>,
                 atlas_layouts: Res<Assets<TextureAtlasLayout>>,
                 mut caches: ResMut<Sprite3dCaches>,
@@ -151,7 +160,13 @@ fn sync_sprites(mut commands: Commands,
 {
     for (e, sprite3d, sprite, mut mesh, mut mat, pending) in &mut query {
         match sprite_mesh(sprite3d, sprite, &images, &atlas_layouts, &mut caches, &mut meshes) {
-            None => if !pending { commands.entity(e).insert(Sprite3dPending); },
+            None => {
+                assert_loadable(&asset_server, sprite.image.id(), e);
+                if let Some(atlas) = &sprite.texture_atlas {
+                    assert_loadable(&asset_server, atlas.layout.id(), e);
+                }
+                if !pending { commands.entity(e).insert(Sprite3dPending); }
+            }
             Some(m) => {
                 mesh.set_if_neq(m);
                 mat.set_if_neq(sprite_material(sprite3d, sprite, &mut caches, &mut materials));
