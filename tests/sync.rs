@@ -41,7 +41,7 @@ fn size(app: &App, e: Entity) -> Vec2
 {
     let meshes = app.world().resource::<Assets<Mesh>>();
     let aabb = meshes.get(&mesh(app, e).0).unwrap().get_aabb().unwrap();
-    (aabb.half_extents * 2.0).truncate().into()
+    (aabb.half_extents * 2.0).truncate()
 }
 
 fn set_atlas(app: &mut App, e: Entity, atlas: Option<TextureAtlas>)
