@@ -99,7 +99,7 @@ fn sprite_mesh(sprite3d: &Sprite3d,
     let uv = Rect { min: rect.min.as_vec2() / image_size,
                     max: rect.max.as_vec2() / image_size };
 
-    let q = |x: f32| (x * MESH_CACHE_GRANULARITY) as u32;
+    let q = |x: f32| (x * MESH_CACHE_GRANULARITY) as i32 as u32;
     let key = [q(w), q(h), q(pivot.x), q(pivot.y), sprite3d.double_sided as u32,
                q(uv.min.x), q(uv.min.y), q(uv.max.x), q(uv.max.y)];
 
