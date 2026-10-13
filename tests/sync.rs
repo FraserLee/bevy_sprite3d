@@ -107,3 +107,36 @@ fn spawn_before_image_loads()
     app.update();
     assert_eq!(size(&app, e), Vec2::new(0.5, 1.0));
 }
+
+#[test]
+fn modifying_assets_in_place_updates_mesh()
+{
+    let mut app = app();
+    let img = app.world_mut().resource_mut::<Assets<Image>>().add(image(64, 32));
+    let layout = grid(&mut app, UVec2::new(32, 32), 2, 1);
+
+    let e = app.world_mut()
+               .spawn((Sprite3d::default(), Sprite { image: img.clone(), ..default() }))
+               .id();
+    app.update();
+    assert_eq!(size(&app, e), Vec2::new(0.64, 0.32));
+
+    // replace the image with one of a different size
+    app.world_mut().resource_mut::<Assets<Image>>().insert(&img, image(32, 32)).unwrap();
+    app.update();
+    assert_eq!(size(&app, e), Vec2::new(0.32, 0.32));
+
+    set_atlas(&mut app, e, Some(TextureAtlas { layout: layout.clone(), index: 0 }));
+    app.update();
+    assert_eq!(size(&app, e), Vec2::new(0.32, 0.32));
+
+    // shrink the atlas frame in place
+    app.world_mut()
+       .resource_mut::<Assets<TextureAtlasLayout>>()
+       .get_mut(&layout)
+       .unwrap()
+       .textures[0] = URect::new(0, 0, 8, 16);
+    app.update();
+    assert_eq!(size(&app, e), Vec2::new(0.08, 0.16));
+}
+

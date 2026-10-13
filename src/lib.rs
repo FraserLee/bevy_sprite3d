@@ -1,6 +1,6 @@
-use bevy::asset::{LoadState, RenderAssetUsages, UntypedAssetId};
+use bevy::asset::{AssetEventSystems, LoadState, RenderAssetUsages, UntypedAssetId};
 use bevy::mesh::*;
-use bevy::platform::collections::HashMap;
+use bevy::platform::collections::{HashMap, HashSet};
 use bevy::prelude::*;
 use bevy::render::render_resource::*;
 use std::hash::Hash;
@@ -12,7 +12,9 @@ pub struct Sprite3dPlugin;
 impl Plugin for Sprite3dPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Sprite3dCaches>();
-        app.add_systems(PostUpdate, sync_sprites);
+        app.add_systems(PostUpdate, (resync_modified_assets, sync_sprites)
+                                        .chain()
+                                        .after(AssetEventSystems));
     }
 }
 
@@ -136,6 +138,31 @@ fn assert_loadable(asset_server: &AssetServer, id: impl Into<UntypedAssetId>, e:
 {
     if let Some(LoadState::Failed(err)) = asset_server.get_load_state(id) {
         panic!("bevy_sprite3d: an asset used by sprite {e} failed to load: {err}");
+    }
+}
+
+// Re-sync sprites whose image or atlas layout was modified.
+#[rustfmt::skip]
+fn resync_modified_assets(mut commands: Commands,
+                          mut images: MessageReader<AssetEvent<Image>>,
+                          mut layouts: MessageReader<AssetEvent<TextureAtlasLayout>>,
+                          query: Query<(Entity, &Sprite), With<Sprite3d>>)
+{
+    fn modified<A: Asset>(events: &mut MessageReader<AssetEvent<A>>) -> HashSet<AssetId<A>>
+    {
+        events.read()
+              .filter_map(|ev| match ev { AssetEvent::Modified { id } => Some(*id), _ => None })
+              .collect()
+    }
+    let images = modified(&mut images);
+    let layouts = modified(&mut layouts);
+    if images.is_empty() && layouts.is_empty() { return; }
+
+    for (e, sprite) in &query {
+        if images.contains(&sprite.image.id())
+        || sprite.texture_atlas.as_ref().is_some_and(|a| layouts.contains(&a.layout.id())) {
+            commands.entity(e).insert(Sprite3dPending);
+        }
     }
 }
 
