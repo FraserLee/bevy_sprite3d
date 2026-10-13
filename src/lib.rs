@@ -77,6 +77,71 @@ pub struct Sprite3dCaches
     pub material_cache: HashMap<MatKey, MeshMaterial3d<StandardMaterial>>,
 }
 
+fn gen_mesh_key(atlas_layouts: &ResMut<Assets<TextureAtlasLayout>>,
+                caches: &mut ResMut<Sprite3dCaches>,
+                atlas: &TextureAtlas,
+                sprite3d: &mut Sprite3d,
+                image_size: &Extent3d,
+                meshes: &mut ResMut<Assets<Mesh>>,
+) {
+    let pivot = sprite3d.pivot.unwrap_or(Vec2::new(0.5, 0.5));
+    let Some(atlas_layout) = atlas_layouts.get(&atlas.layout) else { return; };
+
+    // cache all the meshes for the atlas (if they haven't been already)
+    // so that we can change the index later and not have to re-create the mesh.
+    sprite3d.texture_atlas_keys.clear();
+    for i in 0..atlas_layout.textures.len() {
+        let rect = atlas_layout.textures[i];
+
+        let w = rect.width() as f32 / sprite3d.pixels_per_metre;
+        let h = rect.height() as f32 / sprite3d.pixels_per_metre;
+
+        let frac_rect = bevy::math::Rect {
+            min: Vec2::new(rect.min.x as f32 / (image_size.width as f32),
+                           rect.min.y as f32 / (image_size.height as f32)),
+
+            max: Vec2::new(rect.max.x as f32 / (image_size.width as f32),
+                           rect.max.y as f32 / (image_size.height as f32)),
+        };
+
+        let mut rect_pivot = pivot;
+
+        // scale pivot to be relative to the rect within the atlas.
+        rect_pivot.x *= frac_rect.width();
+        rect_pivot.y *= frac_rect.height();
+        rect_pivot += frac_rect.min;
+
+
+        let mesh_key = [(w * MESH_CACHE_GRANULARITY) as u32,
+            (h * MESH_CACHE_GRANULARITY) as u32,
+            (rect_pivot.x * MESH_CACHE_GRANULARITY) as u32,
+            (rect_pivot.y * MESH_CACHE_GRANULARITY) as u32,
+            sprite3d.double_sided as u32,
+            (frac_rect.min.x * MESH_CACHE_GRANULARITY) as u32,
+            (frac_rect.min.y * MESH_CACHE_GRANULARITY) as u32,
+            (frac_rect.max.x * MESH_CACHE_GRANULARITY) as u32,
+            (frac_rect.max.y * MESH_CACHE_GRANULARITY) as u32];
+
+        sprite3d.texture_atlas_keys.push(mesh_key);
+
+        // if we don't have a mesh in the cache, create it.
+        if !caches.mesh_cache.contains_key(&mesh_key) {
+            let mut mesh = quad(w, h, Some(pivot), sprite3d.double_sided);
+            mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0,
+                                  vec![[frac_rect.min.x, frac_rect.max.y],
+                                       [frac_rect.max.x, frac_rect.max.y],
+                                       [frac_rect.min.x, frac_rect.min.y],
+                                       [frac_rect.max.x, frac_rect.min.y],
+                                       [frac_rect.min.x, frac_rect.max.y],
+                                       [frac_rect.max.x, frac_rect.max.y],
+                                       [frac_rect.min.x, frac_rect.min.y],
+                                       [frac_rect.max.x, frac_rect.min.y],]);
+            let mesh_h = Mesh3d(meshes.add(mesh));
+            caches.mesh_cache.insert(mesh_key, mesh_h);
+        }
+    }
+}
+
 #[rustfmt::skip]
 fn bundle_builder(mut commands: Commands,
                   images: Res<Assets<Image>>,
@@ -93,68 +158,16 @@ fn bundle_builder(mut commands: Commands,
 {
     for (mut sprite3d, mut mesh, mut mat, sprite, e) in query.iter_mut() {
         // get image dimensions
-        let image_size = images.get(&sprite.image).unwrap().texture_descriptor.size;
+        let Some(image) = images.get(&sprite.image) else { continue; };
+        let image_size = image.texture_descriptor.size;
         // w & h are the world-space size of the sprite.
         let w = (image_size.width as f32) / sprite3d.pixels_per_metre;
         let h = (image_size.height as f32) / sprite3d.pixels_per_metre;
         let pivot = sprite3d.pivot.unwrap_or(Vec2::new(0.5, 0.5));
 
         if let Some(atlas) = &sprite.texture_atlas {
-            let atlas_layout = atlas_layouts.get(&atlas.layout).unwrap();
-
-            // cache all the meshes for the atlas (if they haven't been already)
-            // so that we can change the index later and not have to re-create the mesh.
-
-            for i in 0..atlas_layout.textures.len() {
-                let rect = atlas_layout.textures[i];
-
-                let w = rect.width() as f32 / sprite3d.pixels_per_metre;
-                let h = rect.height() as f32 / sprite3d.pixels_per_metre;
-
-                let frac_rect = bevy::math::Rect {
-                    min: Vec2::new(rect.min.x as f32 / (image_size.width as f32),
-                                   rect.min.y as f32 / (image_size.height as f32)),
-
-                    max: Vec2::new(rect.max.x as f32 / (image_size.width as f32),
-                                   rect.max.y as f32 / (image_size.height as f32)),
-                };
-
-                let mut rect_pivot = pivot;
-
-                // scale pivot to be relative to the rect within the atlas.
-                rect_pivot.x *= frac_rect.width();
-                rect_pivot.y *= frac_rect.height();
-                rect_pivot += frac_rect.min;
-
-
-                let mesh_key = [(w * MESH_CACHE_GRANULARITY) as u32,
-                                (h * MESH_CACHE_GRANULARITY) as u32,
-                                (rect_pivot.x * MESH_CACHE_GRANULARITY) as u32,
-                                (rect_pivot.y * MESH_CACHE_GRANULARITY) as u32,
-                                sprite3d.double_sided as u32,
-                                (frac_rect.min.x * MESH_CACHE_GRANULARITY) as u32,
-                                (frac_rect.min.y * MESH_CACHE_GRANULARITY) as u32,
-                                (frac_rect.max.x * MESH_CACHE_GRANULARITY) as u32,
-                                (frac_rect.max.y * MESH_CACHE_GRANULARITY) as u32];
-
-                sprite3d.texture_atlas_keys.push(mesh_key);
-
-                // if we don't have a mesh in the cache, create it.
-                if !caches.mesh_cache.contains_key(&mesh_key) {
-                    let mut mesh = quad(w, h, Some(pivot), sprite3d.double_sided);
-                    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0,
-                                          vec![[frac_rect.min.x, frac_rect.max.y],
-                                               [frac_rect.max.x, frac_rect.max.y],
-                                               [frac_rect.min.x, frac_rect.min.y],
-                                               [frac_rect.max.x, frac_rect.min.y],
-                                               [frac_rect.min.x, frac_rect.max.y],
-                                               [frac_rect.max.x, frac_rect.max.y],
-                                               [frac_rect.min.x, frac_rect.min.y],
-                                               [frac_rect.max.x, frac_rect.min.y],]);
-                    let mesh_h = Mesh3d(meshes.add(mesh));
-                    caches.mesh_cache.insert(mesh_key, mesh_h);
-                }
-            }
+            gen_mesh_key(&atlas_layouts, &mut caches, &atlas, &mut sprite3d, &image_size, &mut meshes);
+            sprite3d.last_texture_atlas = atlas.layout.clone();
         } else {
             // No texture atlas
             let mesh_key = [(w * MESH_CACHE_GRANULARITY) as u32,
@@ -167,21 +180,22 @@ fn bundle_builder(mut commands: Commands,
         }
 
         *mesh = {
-            let mesh_key = if let Some(atlas) = &sprite.texture_atlas {
-                sprite3d.texture_atlas_keys[atlas.index]
+            let mesh_key =  if let Some(atlas) = &sprite.texture_atlas {
+                sprite3d.texture_atlas_keys.get(atlas.index)
             } else {
-                *sprite3d.texture_atlas_keys.first().unwrap()
+                sprite3d.texture_atlas_keys.first()
             };
+            let Some(mesh_key) = mesh_key else { continue; };
             // if we have a mesh in the cache, use it.
             // (greatly reduces number of unique meshes for tilemaps, etc.)
-            if let Some(mesh) = caches.mesh_cache.get(&mesh_key) {
+            if let Some(mesh) = caches.mesh_cache.get(mesh_key) {
                 mesh.clone()
             } else {
                 // otherwise, create a new mesh and cache it.
                 let mesh = Mesh3d(
                     meshes.add(quad(w, h, sprite3d.pivot, sprite3d.double_sided))
                 );
-                caches.mesh_cache.insert(mesh_key, mesh.clone());
+                caches.mesh_cache.insert(*mesh_key, mesh.clone());
                 mesh
             }
         };
@@ -252,13 +266,26 @@ fn handle_images(
 // Update the mesh of a Sprite3d with an atlas sprite when its index changes.
 #[rustfmt::skip]
 fn handle_texture_atlases(
-    caches: Res<Sprite3dCaches>,
-    mut query: Query<(&mut Mesh3d, &Sprite3d, &Sprite), Changed<Sprite>>)
+    mut caches: ResMut<Sprite3dCaches>,
+    atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
+    images: Res<Assets<Image>>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut query: Query<(&mut Mesh3d, &mut Sprite3d, &Sprite), Changed<Sprite>>)
 {
-    for (mut mesh, sprite_3d, sprite) in query.iter_mut() {
+    for (mut mesh, mut sprite_3d, sprite) in query.iter_mut() {
         let Some(texture_atlas) = &sprite.texture_atlas else {
+            if sprite_3d.last_texture_atlas != Handle::default() {
+                sprite_3d.last_texture_atlas = Handle::default();
+            }
             continue;
         };
+
+        if texture_atlas.layout != sprite_3d.last_texture_atlas {
+            let Some(image) = images.get(&sprite.image) else { continue; };
+            let image_size = image.texture_descriptor.size;
+            gen_mesh_key(&atlas_layouts, &mut caches, texture_atlas, &mut sprite_3d, &image_size, &mut meshes);
+            sprite_3d.last_texture_atlas = texture_atlas.layout.clone();
+        }
 
         if let Some(key) = sprite_3d.texture_atlas_keys.get(texture_atlas.index) {
             if let Some(cached_mesh) = caches.mesh_cache.get(key) {
@@ -352,13 +379,16 @@ fn build_material(image: Handle<Image>,
 struct Sprite3dBuilder;
 
 /// Represents a 3D sprite. May store texture atlas data -- note that modifying
-/// `texture_atlas` and `texture_atlas_keys` on an already spawned sprite may
+/// `texture_atlas_keys` on an already spawned sprite may
 /// cause buggy behavior.
 #[derive(Component)]
 #[require(Transform, Mesh3d, MeshMaterial3d<StandardMaterial>, Sprite3dBuilder)]
 pub struct Sprite3d
 {
     pub texture_atlas_keys: Vec<[u32; 9]>,
+
+    /// Store the last texture atlas layout to detect if layout has been changed
+    pub last_texture_atlas: Handle<TextureAtlasLayout>,
 
     /// The sprite's alpha mode.
     ///
@@ -398,6 +428,7 @@ impl Default for Sprite3d
     fn default() -> Self
     {
         Self { texture_atlas_keys: Vec::new(),
+               last_texture_atlas: Handle::default(),
                pixels_per_metre:   100.,
                pivot:              None,
                alpha_mode:         DEFAULT_ALPHA_MODE,
