@@ -124,9 +124,8 @@ fn setup(mut commands: Commands,
             ..default()
         }))
         .insert(ScreenSpaceAmbientOcclusion::default())
-        .insert(TemporalAntiAliasing::default());
-
-    commands.spawn(Tonemapping::AcesFitted);
+        .insert(TemporalAntiAliasing::default())
+        .insert(Tonemapping::AcesFitted);
 }
 
 #[rustfmt::skip]
