@@ -86,20 +86,18 @@ fn sprite_mesh(sprite3d: &Sprite3d,
                meshes: &mut Assets<Mesh>)
                -> Option<Mesh3d>
 {
-    let size = images.get(&sprite.image)?.texture_descriptor.size;
-    let image_size = Vec2::new(size.width as f32, size.height as f32);
-
+    let size = images.get(&sprite.image)?.size();
     let rect = match &sprite.texture_atlas {
         Some(atlas) => atlas_layouts.get(&atlas.layout)?.textures[atlas.index],
-        None => URect::new(0, 0, size.width, size.height),
+        None => URect::from_corners(UVec2::ZERO, size),
     };
 
     // w & h are the world-space size of the sprite.
     let w = rect.width() as f32 / sprite3d.pixels_per_metre;
     let h = rect.height() as f32 / sprite3d.pixels_per_metre;
     let pivot = sprite3d.pivot.unwrap_or(Vec2::splat(0.5));
-    let uv = Rect { min: rect.min.as_vec2() / image_size,
-                    max: rect.max.as_vec2() / image_size };
+    let uv = Rect { min: rect.min.as_vec2() / size.as_vec2(),
+                    max: rect.max.as_vec2() / size.as_vec2() };
 
     let q = |x: f32| (x * MESH_CACHE_GRANULARITY) as i32 as u32;
     let key = [q(w), q(h), q(pivot.x), q(pivot.y), sprite3d.double_sided as u32,
@@ -192,7 +190,7 @@ fn sync_sprites(mut commands: Commands,
                 if let Some(atlas) = &sprite.texture_atlas {
                     assert_loadable(&asset_server, atlas.layout.id(), e);
                 }
-                if !pending { commands.entity(e).insert(Sprite3dPending); }
+                commands.entity(e).insert(Sprite3dPending);
             }
             Some(m) => {
                 mesh.set_if_neq(m);
