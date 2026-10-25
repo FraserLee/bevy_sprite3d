@@ -40,69 +40,93 @@ Some more examples. These don't use bevy, but demonstrate the effect style:
 
 Check out the [examples](./examples) for details. Tl;dr initialize the plugin with
 ```rust
-app.add_plugin(Sprite3dPlugin)
+app.add_plugins(Sprite3dPlugin)
 ```
 and spawn sprites with
 ```rust
 fn setup(
     mut commands: Commands,
-    images: Res<ImageAssets>, // this is your custom resource populated with asset handles
+    asset_server: Res<AssetServer>,
+    mut layouts: ResMut<Assets<TextureAtlasLayout>>,
 ) {
 
     // ----------------------- Single Static Sprite ----------------------------
 
     commands.spawn((
         Sprite {
-            image: images.sprite.clone(),
+            image: asset_server.load("icon.png"),
+
             ..default()
+
+            // color: Color::WHITE,
+            // flip_x: false,
+            // custom_size: None,
+            // rect: None,
+            // alpha_mode: SpriteAlphaMode::Blend,
         },
         Sprite3d {
             pixels_per_metre: 400.,
-
-            partial_alpha: true,
 
             unlit: true,
 
             ..default()
 
-            // pivot: Some(Vec2::new(0.5, 0.5)),
+            // emissive: LinearRgba::BLACK,
             // double_sided: true,
-        }
+        },
+        // Anchor::CENTER, // default pivot
     ));
 
     // ------------------- Texture Atlas (Sprite Sheet) ------------------------
 
     let texture_atlas = TextureAtlas {
-        layout: images.layout.clone(),
+        layout: layouts.add(TextureAtlasLayout::from_grid(
+            UVec2::new(24, 24), // tile_size
+            7,                  // columns
+            1,                  // rows
+            None,               // padding
+            None,               // offset
+        )),
         index: 3,
     };
 
     commands.spawn((
         Sprite {
-            image: images.sprite_sheet.clone(),
+            image: asset_server.load("gabe-idle-run.png"),
             texture_atlas: Some(texture_atlas),
             ..default()
         },
         Sprite3d {
             pixels_per_metre: 32.,
-            partial_alpha: true,
             unlit: true,
 
             ..default()
 
-            // pivot: Some(Vec2::new(0.5, 0.5)),
+            // emissive: LinearRgba::BLACK,
             // double_sided: true,
-        }
+        },
+        // Anchor::CENTER, // default pivot
     ));
 }
 ```
+or as a `bsn!` scene:
+```rust
+commands.queue_spawn_scene(bsn! {
+    Sprite { image: "icon.png" }
+    Sprite3d { pixels_per_metre: 400., unlit: true }
+});
+```
 
+Note: `Sprite::alpha_mode` defaults to `Blend`, which is more expensive. Most
+sprites are better off with `alpha_mode: SpriteAlphaMode::Mask(0.5)` (pixels
+are either fully opaque or fully transparent), or `Opaque` for images with no
+transparency.
 
 ## Versioning
 
 | `bevy_sprite3d` version | `bevy` version |
 |-------------------------|----------------|
-| 10.0 - 10.1             | 0.20           |
+| 10.0 - 11.0             | 0.20           |
 | 9.0                     | 0.19           |
 | 8.0                     | 0.18           |
 | 7.0                     | 0.17           |

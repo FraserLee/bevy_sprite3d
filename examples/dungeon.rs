@@ -1,32 +1,21 @@
 use bevy::anti_alias::taa::TemporalAntiAliasing;
-use bevy::core_pipeline::tonemapping::Tonemapping;
-use bevy::pbr::ScreenSpaceAmbientOcclusion;
-use bevy::post_process::bloom::Bloom;
+use bevy::camera::visibility::VisibilitySystems;
 use bevy::camera::Hdr;
+use bevy::core_pipeline::tonemapping::Tonemapping;
+use bevy::material::specialize::SpecializedMeshPipelineError;
+use bevy::mesh::MeshVertexBufferLayoutRef;
+use bevy::pbr::{ContactShadows, MaterialPipeline, MaterialPipelineKey, ScreenSpaceAmbientOcclusion};
+use bevy::picking::mesh_picking::MeshPickingPlugin;
+use bevy::post_process::bloom::Bloom;
+use bevy::render::render_resource::{AsBindGroup, CompareFunction, RenderPipelineDescriptor};
+use bevy::shader::ShaderRef;
 use bevy::{prelude::*, window::WindowResolution};
 use std::time::Duration;
 
 use bevy_sprite3d::prelude::*;
+use bevy_sprite3d::{SPRITE3D_ATTRIBUTE_RECT, SPRITE3D_ATTRIBUTE_UV_RECT};
 
 use rand::{prelude::SliceRandom, Rng};
-
-#[derive(States, Hash, Clone, PartialEq, Eq, Debug, Default)] #[rustfmt::skip]
-enum GameState { #[default] Loading, Ready }
-
-// #[derive(AssetCollection, Resource)]
-// struct ImageAssets {
-//     #[asset(texture_atlas(tile_size_x = 16., tile_size_y = 16.,
-//             columns = 30, rows = 35, padding_x = 10., padding_y = 10.,
-//             offset_x = 5., offset_y = 5.))]
-//     #[asset(path = "dungeon/tileset_padded.png")]
-//     tileset: Handle<TextureAtlas>,
-// }
-#[derive(Resource, Default)]
-struct ImageAssets
-{
-    image:  Handle<Image>,
-    layout: Handle<TextureAtlasLayout>,
-}
 
 
 #[rustfmt::skip]
@@ -41,44 +30,72 @@ fn main()
                     ..default()
                 }), ..default()
             }))
-        .add_plugins(Sprite3dPlugin)
-        .init_state::<GameState>()
-
-        // initially load assets
-        .add_systems(Startup, |asset_server: Res<AssetServer>,
-                               mut assets:   ResMut<ImageAssets>,
-                               mut layouts:  ResMut<Assets<TextureAtlasLayout>>| {
-
-            assets.image = asset_server.load("dungeon/tileset_padded.png");
-
-            assets.layout = layouts.add(
-                TextureAtlasLayout::from_grid(
-                                        UVec2::new(16, 16),
-                                        30,
-                                        35,
-                                        Some(UVec2::new(10, 10)),
-                                        Some(UVec2::new(5, 5)))
-            );
-        })
-
-        // every frame check if assets are loaded. Once they are, we can proceed with setup.
-        .add_systems(Update, (
-                       |asset_server   : Res<AssetServer>,
-                        assets         : Res<ImageAssets>,
-                        mut next_state : ResMut<NextState<GameState>>| {
-
-            if asset_server.get_load_state(assets.image.id()).is_some_and(|s| s.is_loaded()) {
-                next_state.set(GameState::Ready);
-            }
-        }).run_if(in_state(GameState::Loading)) )
-        .add_systems( OnEnter(GameState::Ready), setup )
-        .add_systems( OnEnter(GameState::Ready), spawn_sprites )
-        .add_systems( Update, animate_camera.run_if(in_state(GameState::Ready)) )
-        .add_systems( Update, animate_sprites.run_if(in_state(GameState::Ready)) )
-        .add_systems( Update, face_camera.run_if(in_state(GameState::Ready)) )
-        .insert_resource(ImageAssets::default())
+        .add_plugins((Sprite3dPlugin,
+                      // hovering a character or prop highlights and outlines it
+                      MeshPickingPlugin, MaterialPlugin::<OutlineMaterial>::default()))
+        .add_systems(Startup, (setup, spawn_sprites))
+        .add_systems(Update, (animate_camera, animate_sprites, face_camera))
+        // copy the meshes bevy_sprite3d assigned this frame onto the outlines,
+        // before the visibility pass computes their bounds.
+        .add_systems(PostUpdate, sync_outlines.after(Sprite3dSystems)
+                                              .before(VisibilitySystems::CalculateBounds))
         .run();
+}
 
+// Draws a one-texel outline around a sprite, over top of everything else. Goes on a child of the
+// sprite that borrows the sprite's mesh.
+#[derive(Asset, TypePath, AsBindGroup, Clone)]
+struct OutlineMaterial
+{
+    #[texture(0, visibility(vertex, fragment))]
+    #[sampler(1)]
+    image: Handle<Image>,
+    #[uniform(2)]
+    color: LinearRgba,
+    /// x: grow upwards (0 or 1), y: grow downwards. Where a sprite continues
+    /// into the piece above or below, that side isn't grown, so no outline is
+    /// drawn across the seam.
+    #[uniform(3)]
+    grow: Vec4,
+}
+
+#[rustfmt::skip]
+impl Material for OutlineMaterial
+{
+    fn vertex_shader() -> ShaderRef { "shaders/outline.wesl".into() }
+    fn fragment_shader() -> ShaderRef { "shaders/outline.wesl".into() }
+    fn alpha_mode(&self) -> AlphaMode { AlphaMode::Blend } // drawn after the opaque pass
+
+    fn specialize(_: &MaterialPipeline,
+                  descriptor: &mut RenderPipelineDescriptor,
+                  layout: &MeshVertexBufferLayoutRef,
+                  _: MaterialPipelineKey<Self>)
+                  -> Result<(), SpecializedMeshPipelineError>
+    {
+        descriptor.vertex.buffers = vec![layout.0.get_layout(&[
+            Mesh::ATTRIBUTE_POSITION.at_shader_location(0),
+            Mesh::ATTRIBUTE_UV_0.at_shader_location(1),
+            SPRITE3D_ATTRIBUTE_RECT.at_shader_location(2),
+            SPRITE3D_ATTRIBUTE_UV_RECT.at_shader_location(3),
+        ])?];
+        // ignore depth so the outline is visible through walls
+        if let Some(depth) = descriptor.depth_stencil.as_mut() {
+            depth.depth_compare = Some(CompareFunction::Always);
+            depth.depth_write_enabled = Some(false);
+        }
+        Ok(())
+    }
+}
+
+#[derive(Component)]
+struct Outline;
+
+fn sync_outlines(mut outlines: Query<(&ChildOf, &mut Mesh3d), With<Outline>>,
+                 sprites: Query<&Mesh3d, Without<Outline>>)
+{
+    for (parent, mut mesh) in &mut outlines {
+        mesh.set_if_neq(sprites.get(parent.parent()).unwrap().clone());
+    }
 }
 
 #[derive(Component)]
@@ -107,30 +124,51 @@ fn setup(mut commands: Commands,
                     Transform::from_xyz(-0.9, 0.5, -4.2)));
 
     // camera
-    commands
-        .spawn(Camera3d::default())
-        .insert(Camera {
-            clear_color: ClearColorConfig::Custom(Color::NONE),
-            ..default()
-        })
-        .insert(Hdr)
-        .insert(Msaa::Off)
-        .insert(Bloom {
-            intensity: 0.3,
-            ..default()
-        })
-        .insert(bevy::prelude::Projection::Perspective(PerspectiveProjection {
-            fov: std::f32::consts::PI / 6.0,
-            ..default()
-        }))
-        .insert(ScreenSpaceAmbientOcclusion::default())
-        .insert(TemporalAntiAliasing::default())
-        .insert(Tonemapping::AcesFitted);
+    commands.spawn((
+        Camera3d::default(),
+        Camera { clear_color: ClearColorConfig::Custom(Color::NONE), ..default() },
+        Projection::Perspective(PerspectiveProjection { fov: std::f32::consts::PI / 6.0, ..default() }),
+        Hdr,
+        Msaa::Off,
+        Bloom { intensity: 0.3, ..default() },
+        ScreenSpaceAmbientOcclusion::default(),
+        ContactShadows::default(),
+        TemporalAntiAliasing::default(),
+        Tonemapping::AcesFitted,
+    ));
 }
 
 #[rustfmt::skip]
-fn spawn_sprites(mut commands: Commands, images: Res<ImageAssets>)
+fn spawn_sprites(mut commands: Commands,
+                 asset_server: Res<AssetServer>,
+                 mut layouts: ResMut<Assets<TextureAtlasLayout>>,
+                 mut outlines: ResMut<Assets<OutlineMaterial>>)
 {
+    let image = asset_server.load("dungeon/tileset_padded.png");
+    // one outline material per combination of open sides
+    let outline = |up: bool, down: bool| OutlineMaterial {
+        image: image.clone(),
+        color: LinearRgba::rgb(4.0, 3.5, 1.0),
+        grow:  Vec4::new(up as u32 as f32, down as u32 as f32, 0., 0.),
+    };
+    let outline_both = outlines.add(outline(true, true));
+    let outline_up = outlines.add(outline(true, false));
+    let outline_down = outlines.add(outline(false, true));
+    let layout = layouts.add(TextureAtlasLayout::from_grid(UVec2::new(16, 16),
+                                                           30,
+                                                           35,
+                                                           Some(UVec2::new(10, 10)),
+                                                           Some(UVec2::new(5, 5))));
+
+    // Mask alpha keeps the sprites out of the (sorted) transparent pass
+    let sprite = |index: usize| Sprite {
+        image: image.clone(),
+        texture_atlas: Some(TextureAtlas { layout: layout.clone(), index }),
+        alpha_mode: SpriteAlphaMode::Mask(0.5),
+        ..default()
+    };
+    let sprite3d = Sprite3d { pixels_per_metre: 16., double_sided: false, ..default() };
+
     // ------------------ Tilemap for the floor ------------------
 
     // we first set up a few closures to help generate variations of tiles
@@ -205,22 +243,9 @@ fn spawn_sprites(mut commands: Commands, images: Res<ImageAssets>)
                 continue;
             }
 
-            let atlas = TextureAtlas {
-                layout: images.layout.clone(),
-                index: index as usize,
-            };
-
             commands.spawn((
-                Sprite3d {
-                    pixels_per_metre: 16.,
-                    double_sided: false,
-                    ..default()
-                },
-                Sprite {
-                    image: images.image.clone(),
-                    texture_atlas: Some(atlas),
-                    ..default()
-                },
+                sprite(index),
+                sprite3d.clone(),
                 Transform::from_xyz(x, 0.0, y)
                     .with_rotation(Quat::from_rotation_x(-std::f32::consts::PI / 2.0))
             ));
@@ -268,22 +293,9 @@ fn spawn_sprites(mut commands: Commands, images: Res<ImageAssets>)
             let y = y as f32 - map.len() as f32 / 2.0;
 
             for i in [0,1] { // add bottom and top piece
-                let atlas = TextureAtlas {
-                    layout: images.layout.clone(),
-                    index: (tile_x + (5 - i) * 30) as usize,
-                };
-
                 commands.spawn((
-                    Sprite3d {
-                        pixels_per_metre: 16.,
-                        double_sided: false,
-                        ..default()
-                    },
-                    Sprite {
-                        image: images.image.clone(),
-                        texture_atlas: Some(atlas),
-                        ..default()
-                    },
+                    sprite(tile_x + (5 - i) * 30),
+                    sprite3d.clone(),
                     Transform::from_xyz(x+0.5, i as f32 + 0.499, y)
                         .with_rotation(Quat::from_rotation_y(dir * std::f32::consts::PI / 2.0))
                 ));
@@ -313,22 +325,9 @@ fn spawn_sprites(mut commands: Commands, images: Res<ImageAssets>)
             let y = y as f32 - map.len() as f32 / 2.0;
 
             for i in [0, 1] { // add bottom and top piece
-                let atlas = TextureAtlas {
-                    layout: images.layout.clone(),
-                    index: (tile_x + (5 - i) * 30) as usize,
-                };
-
                 commands.spawn((
-                    Sprite3d {
-                        pixels_per_metre: 16.,
-                        double_sided: false,
-                        ..default()
-                    },
-                    Sprite {
-                        image: images.image.clone(),
-                        texture_atlas: Some(atlas),
-                        ..default()
-                    },
+                    sprite(tile_x + (5 - i) * 30),
+                    sprite3d.clone(),
                     Transform::from_xyz(x, i as f32 + 0.499, y + 0.5)
                         .with_rotation(Quat::from_rotation_y((dir - 1.0) * std::f32::consts::PI / 2.0)),
                 ));
@@ -338,39 +337,42 @@ fn spawn_sprites(mut commands: Commands, images: Res<ImageAssets>)
 
     // --------------------- characters, enemies, props ---------------------
 
-    let mut entity = |(x, y), tile_x, tile_y, height, frames| {
-        let mut timer = Timer::from_seconds(0.4, TimerMode::Repeating);
-        timer.set_elapsed(Duration::from_secs_f32(rng.gen_range(0.0..0.4)));
+    // a parent (faces the camera, hoverable) with a child sprite per tile of
+    // height, each with a hidden outline child.
+    let mut prop = |(x, y, z), tile_x: usize, tile_y: usize, height: usize, frames: usize,
+                    frame_secs: f32, emissive: LinearRgba| {
+        let mut timer = Timer::from_seconds(frame_secs, TimerMode::Repeating);
+        timer.set_elapsed(Duration::from_secs_f32(rng.gen_range(0.0..frame_secs)));
 
-        for i in 0usize..height {
-            let atlas = TextureAtlas {
-                layout: images.layout.clone(),
-                index: (tile_x + (tile_y - i) * 30),
-            };
-
-            let mut c = commands.spawn((
-                Sprite3d {
-                    pixels_per_metre: 16.,
-                    ..default()
-                },
-                Sprite {
-                    image: images.image.clone(),
-                    texture_atlas: Some(atlas),
-                    ..default()
-                },
-                FaceCamera {},
-                Transform::from_xyz(x as f32, i as f32 + 0.498, y),
-            ));
-
-            if frames > 1 {
-                c.insert(Animation {
-                    frames: (0..frames).map(|j| j + tile_x + (tile_y - i) * 30_usize).collect(),
-                    current: 0,
-                    timer: timer.clone(),
-                });
-            }
-        }
+        commands.spawn((Transform::from_xyz(x, y, z), Visibility::default(), FaceCamera))
+                .with_children(|parent| {
+                    for i in 0..height {
+                        let index = tile_x + (tile_y - i) * 30;
+                        let mut c = parent.spawn((sprite(index),
+                                                  Sprite3d { pixels_per_metre: 16.,
+                                                             emissive,
+                                                             unlit: emissive != LinearRgba::BLACK,
+                                                             ..default() },
+                                                  Transform::from_xyz(0.0, i as f32, 0.0)));
+                        if frames > 1 {
+                            c.insert(Animation { frames:  (index..index + frames).collect(),
+                                                 current: 0,
+                                                 timer:   timer.clone() });
+                        }
+                        let outline = match (i == height - 1, i == 0) {
+                            (true, true) => &outline_both,
+                            (true, false) => &outline_up,
+                            _ => &outline_down,
+                        };
+                        c.with_child((Outline, Mesh3d::default(), MeshMaterial3d(outline.clone()),
+                                      Visibility::Hidden, Pickable::IGNORE));
+                    }
+                })
+                .observe(highlight::<PointerEnter>(true))
+                .observe(highlight::<PointerLeave>(false));
     };
+
+    let mut entity = |(x, z), tile_x, tile_y, height, frames| prop((x, 0.498, z), tile_x, tile_y, height, frames, 0.4, LinearRgba::BLACK);
 
     // 3 humans
     entity((4.5, -4.0), 8, 27, 2, 2);
@@ -388,72 +390,52 @@ fn spawn_sprites(mut commands: Commands, images: Res<ImageAssets>)
     entity((4.2, -8.), 13, 16, 2, 1);
 
     // fire
-    let atlas = TextureAtlas {
-        layout: images.layout.clone(),
-        index: 30*32 + 14,
-    };
+    prop((2.0, 0.5, -5.5), 14, 32, 1, 3, 0.2, LinearRgba::rgb(1.0, 0.5, 0.0) * 10.0);
 
-    commands.spawn((Sprite3d {
-            pixels_per_metre: 16.,
-            emissive: LinearRgba::rgb(1.0, 0.5, 0.0) * 10.0,
-            unlit: true,
-            ..default()
-        },
-        Sprite {
-            image: images.image.clone(),
-            texture_atlas: Some(atlas),
-            ..default()
-        },
-        Transform::from_xyz(2.0, 0.5, -5.5),
-        Animation {
-            frames: vec![30*32 + 14, 30*32 + 15, 30*32 + 16],
-            current: 0,
-            timer: Timer::from_seconds(0.2, TimerMode::Repeating),
-        },
-        FaceCamera {}
-    ));
+    // glowy book
+    prop((-5., 0.7, 6.5), 22, 22, 1, 1, 0.4, LinearRgba::rgb(165./255., 1.0, 160./255.));
+
+    // their lights
     commands.spawn((
         PointLight {
             intensity: 500_000.0,
             color: Color::srgb(1.0, 231./255., 221./255.),
             shadow_maps_enabled: true,
+            contact_shadows_enabled: true,
             ..default()
         },
         Transform::from_xyz(2.0, 1.8, -5.5),
-    ));
-
-    // glowy book
-    let atlas = TextureAtlas {
-        layout: images.layout.clone(),
-        index: 22*30 + 22,
-    };
-
-    commands.spawn((
-        Sprite3d {
-            pixels_per_metre: 16.,
-            emissive: LinearRgba::rgb(165./255., 1.0, 160./255.),
-            unlit: true,
-            ..default()
-        },
-        Sprite {
-            image: images.image.clone(),
-            texture_atlas: Some(atlas),
-            ..default()
-        },
-        Transform::from_xyz(-5., 0.7, 6.5),
-        FaceCamera {}
     ));
     commands.spawn((
         PointLight {
             intensity: 70_000.0,
             color: Color::srgb(91./255., 1.0, 92./255.),
             shadow_maps_enabled: true,
+            contact_shadows_enabled: true,
             ..default()
         },
         Transform::from_xyz(-5., 1.1, 6.5),
     ));
+}
 
 
+// highlights every sprite under the hovered entity. Enter / Leave rather than
+// Over / Out, so moving between the pieces of one prop doesn't un-highlight it.
+#[rustfmt::skip] #[allow(clippy::type_complexity)]
+fn highlight<E: EntityEvent>(on: bool)
+    -> impl Fn(On<E>, Query<&Children>, Query<(&mut Sprite, &mut Sprite3d)>, Query<&mut Visibility, With<Outline>>)
+{
+    move |event, children, mut sprites, mut outlines| {
+        for e in children.iter_descendants(event.event_target()) {
+            if let Ok((mut sprite, mut sprite3d)) = sprites.get_mut(e) {
+                sprite.color = if on { Color::linear_rgb(1.5, 1.5, 1.2) } else { Color::WHITE };
+                sprite3d.unlit = on || sprite3d.emissive != LinearRgba::BLACK;
+            }
+            if let Ok(mut visibility) = outlines.get_mut(e) {
+                *visibility = if on { Visibility::Inherited } else { Visibility::Hidden };
+            }
+        }
+    }
 }
 
 // parameters for how the camera orbits the area

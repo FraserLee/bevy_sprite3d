@@ -1,9 +1,13 @@
-use bevy::asset::{AssetEventSystems, LoadState, RenderAssetUsages, UntypedAssetId};
+use bevy::asset::{AssetEventSystems, LoadState, RenderAssetUsages, StrongHandle, UntypedAssetId};
+use bevy::camera::primitives::Aabb;
+use bevy::camera::visibility::{NoAutoAabb, VisibilitySystems};
 use bevy::mesh::*;
 use bevy::platform::collections::{HashMap, HashSet};
 use bevy::prelude::*;
 use bevy::render::render_resource::*;
+use bevy::sprite::{Anchor, SpriteAlphaMode};
 use std::hash::Hash;
+use std::sync::{Arc, Weak};
 
 pub mod prelude;
 
@@ -12,28 +16,56 @@ pub struct Sprite3dPlugin;
 impl Plugin for Sprite3dPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<Sprite3dCaches>();
-        app.add_systems(PostUpdate, (resync_modified_assets, sync_sprites)
+        app.register_type::<Sprite3d>();
+        app.configure_sets(PostUpdate, Sprite3dSystems.before(VisibilitySystems::CalculateBounds));
+
+        // Meshes and materials must be added before AssetEventSystems flushes
+        // their Added events. bevy_pbr drops (and never retries) the pipeline-
+        // specialization of an entity whose new mesh isn't in the render-world
+        // yet, so an Image / TextureAtlasLayout modified in-place (hot reload,
+        // etc.) resizes its sprites a frame late.
+        // (Note: Changes to Sprite itself (atlas index, etc.) still land the same frame).
+        // If bevy_pbr changes its code, this can go back after AssetEventSystems.
+        app.add_systems(PostUpdate, ((resync_modified_assets, sync_sprites, sweep_caches)
                                         .chain()
-                                        .after(AssetEventSystems));
+                                        .before(AssetEventSystems),
+
+                                     // (after bevy's sprite renderer adds its Mesh2d, before the flush)
+                                     strip_mesh2d.after(AssetEventSystems)).in_set(Sprite3dSystems));
+    }
+}
+
+/// Order against this set to see the current frame's meshes.
+/// (eg. examples/dungeon.rs copies them onto outline entities)
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Sprite3dSystems;
+
+// Bevy's sprite renderer adds a Mesh2d to every Sprite. On a Sprite3d a
+// Camera2d would draw it, and mesh picking treats anything with a Mesh2d as
+// two-sided, so back-facing single-sided quads would still catch pointer rays.
+fn strip_mesh2d(mut commands: Commands, query: Query<Entity, (With<Sprite3d>, With<Mesh2d>)>)
+{
+    for e in &query {
+        commands.entity(e).remove::<Mesh2d>();
     }
 }
 
 
-// sizes are multiplied by this, then cast to ints to query the mesh hashmap.
+// sizes (in texels) and anchors are multiplied by this, then cast to ints to
+// query the mesh hashmap.
 const MESH_CACHE_GRANULARITY: f32 = 1000.;
+// colours likewise
+const COLOUR_GRANULARITY: f32 = 1024.;
 
 #[derive(Eq, Hash, PartialEq)]
 pub struct MatKey
 {
-    image:      Handle<Image>,
+    image:      AssetId<Image>,
     alpha_mode: HashableAlphaMode,
     unlit:      bool,
-    emissive:   [u8; 4],
-    flip_x:     bool,
-    flip_y:     bool,
+    emissive:   [i32; 4],
+    color:      [i32; 4],
 }
-
-const DEFAULT_ALPHA_MODE: AlphaMode = AlphaMode::Mask(0.5);
 
 #[derive(Eq, PartialEq)]
 struct HashableAlphaMode(AlphaMode);
@@ -59,54 +91,128 @@ impl Hash for HashableAlphaMode
 
 
 #[rustfmt::skip]
-fn reduce_colour(c: LinearRgba) -> [u8; 4] { [
-        (c.red * 255.) as u8,
-        (c.green * 255.) as u8,
-        (c.blue * 255.) as u8,
-        (c.alpha * 255.) as u8,
+fn reduce_colour(c: LinearRgba) -> [i32; 4] { [
+        (c.red * COLOUR_GRANULARITY).round() as i32,
+        (c.green * COLOUR_GRANULARITY).round() as i32,
+        (c.blue * COLOUR_GRANULARITY).round() as i32,
+        (c.alpha * COLOUR_GRANULARITY).round() as i32,
 ] }
 
+fn expand_colour(c: [i32; 4]) -> LinearRgba
+{
+    LinearRgba::from_f32_array(c.map(|x| x as f32 / COLOUR_GRANULARITY))
+}
 
+
+// Weak handles, so an asset is dropped once no sprite uses it. Dead entries
+// are swept on frames where a mesh / material became unused (see `sweep_caches`).
+//
+// (The maps are SwissTables (single allocation holding a control byte per
+//  bucket and a flat array of (key, pointer) buckets). Capacity only grows,
+//  so no steady-state allocation churn.)
 #[derive(Resource, Default)]
 pub struct Sprite3dCaches
 {
-    pub mesh_cache:     HashMap<[u32; 9], Mesh3d>,
-    pub material_cache: HashMap<MatKey, MeshMaterial3d<StandardMaterial>>,
+    pub mesh_cache:     HashMap<[u32; 12], Weak<StrongHandle>>,
+    pub material_cache: HashMap<MatKey, Weak<StrongHandle>>,
 }
 
-// The mesh for a sprite's current image / atlas frame, shared through the
-// cache with every other sprite of the same shape. None while the image or
-// atlas layout is still loading.
+#[rustfmt::skip]
+fn cached<K: Eq + Hash, A: Asset>(cache: &mut HashMap<K, Weak<StrongHandle>>,
+                                  key: K,
+                                  assets: &mut Assets<A>,
+                                  build: impl FnOnce() -> A)
+                                  -> Handle<A>
+{
+    if let Some(strong) = cache.get(&key).and_then(Weak::upgrade) {
+        return Handle::Strong(strong);
+    }
+    let handle = assets.add(build());
+    let Handle::Strong(strong) = &handle else { unreachable!() };
+    cache.insert(key, Arc::downgrade(strong));
+    handle
+}
+
+// An entry can only die when a mesh / material's last strong handle drops,
+// which bevy reports as `AssetEvent::Unused` (the frame after the drop), so
+// only sweep then.
+//
+// A linear sweep of every bucket O(peak number of distinct [meshes|materials] ).
+// hashbrown just scans the control bytes, and dead entries are dropped in-place
+// (their tombstones are reclaimed on a later insert (rehash in place, or
+// grow + move everything once)) so this performs fine for real-time in the
+// types of scenes I'm working with.
+//
+// `retain` can't be run over part of the table (hashbrown exposes no bucket
+// ranges), so amortising across frames would need a different container.
+#[rustfmt::skip]
+fn sweep_caches(mut caches: ResMut<Sprite3dCaches>,
+                mut meshes: MessageReader<AssetEvent<Mesh>>,
+                mut materials: MessageReader<AssetEvent<StandardMaterial>>)
+{
+    fn any_unused<A: Asset>(events: &mut MessageReader<AssetEvent<A>>) -> bool
+    {
+        let unused = events.read().any(|ev| matches!(ev, AssetEvent::Unused { .. }));
+        events.clear();
+        unused
+    }
+    if any_unused(&mut meshes) {
+        caches.mesh_cache.retain(|_, handle| handle.strong_count() > 0);
+    }
+    if any_unused(&mut materials) {
+        caches.material_cache.retain(|_, handle| handle.strong_count() > 0);
+    }
+}
+
+// The mesh and bounds for a sprite's current image / atlas frame, shared
+// through the cache with every other sprite of the same shape. None while the
+// image or atlas layout is still loading.
 #[rustfmt::skip]
 fn sprite_mesh(sprite3d: &Sprite3d,
                sprite: &Sprite,
+               anchor: Vec2,
                images: &Assets<Image>,
                atlas_layouts: &Assets<TextureAtlasLayout>,
                caches: &mut Sprite3dCaches,
                meshes: &mut Assets<Mesh>)
-               -> Option<Mesh3d>
+               -> Option<(Mesh3d, Aabb)>
 {
-    let size = images.get(&sprite.image)?.size();
-    let rect = match &sprite.texture_atlas {
-        Some(atlas) => atlas_layouts.get(&atlas.layout)?.textures[atlas.index],
-        None => URect::from_corners(UVec2::ZERO, size),
+    let size = images.get(&sprite.image)?.size_f32();
+
+    // as with 2d sprites, `rect` is relative to the atlas frame
+    let frame = match &sprite.texture_atlas {
+        Some(atlas) => atlas_layouts.get(&atlas.layout)?.textures[atlas.index].as_rect(),
+        None => Rect::from_corners(Vec2::ZERO, size),
     };
+    let rect = match sprite.rect {
+        Some(r) => Rect { min: frame.min + r.min, max: frame.min + r.max },
+        None => frame,
+    };
+    let size_px = sprite.custom_size.unwrap_or(rect.size());
 
     // w & h are the world-space size of the sprite.
-    let w = rect.width() as f32 / sprite3d.pixels_per_metre;
-    let h = rect.height() as f32 / sprite3d.pixels_per_metre;
-    let pivot = sprite3d.pivot.unwrap_or(Vec2::splat(0.5));
-    let uv = Rect { min: rect.min.as_vec2() / size.as_vec2(),
-                    max: rect.max.as_vec2() / size.as_vec2() };
+    let w = size_px.x / sprite3d.pixels_per_metre;
+    let h = size_px.y / sprite3d.pixels_per_metre;
+    let mut uv = Rect { min: rect.min / size,
+                        max: rect.max / size };
+
+    if sprite.flip_x { std::mem::swap(&mut uv.min.x, &mut uv.max.x); }
+    if sprite.flip_y { std::mem::swap(&mut uv.min.y, &mut uv.max.y); }
 
     let q = |x: f32| (x * MESH_CACHE_GRANULARITY) as i32 as u32;
-    let key = [q(w), q(h), q(pivot.x), q(pivot.y), sprite3d.double_sided as u32,
-               q(uv.min.x), q(uv.min.y), q(uv.max.x), q(uv.max.y)];
+    let key = [q(size_px.x), q(size_px.y), sprite3d.pixels_per_metre.to_bits(),
+               q(anchor.x), q(anchor.y),
+               sprite3d.double_sided as u32 | (sprite.flip_x as u32) << 1 | (sprite.flip_y as u32) << 2,
+               q(rect.min.x), q(rect.min.y), q(rect.max.x), q(rect.max.y),
+               size.x as u32, size.y as u32];
 
     // (greatly reduces number of unique meshes for tilemaps, etc.)
-    Some(caches.mesh_cache.entry(key).or_insert_with(|| {
-        Mesh3d(meshes.add(quad(w, h, pivot, uv, sprite3d.double_sided)))
-    }).clone())
+    let mesh = Mesh3d(cached(&mut caches.mesh_cache, key, meshes,
+                             || quad(w, h, anchor, uv, sprite3d.double_sided)));
+
+    let aabb = Aabb { center:       Vec3A::new(-anchor.x * w, -anchor.y * h, 0.),
+                      half_extents: Vec3A::new(w / 2., h / 2., 0.) };
+    Some((mesh, aabb))
 }
 
 #[rustfmt::skip]
@@ -116,20 +222,25 @@ fn sprite_material(sprite3d: &Sprite3d,
                    materials: &mut Assets<StandardMaterial>)
                    -> MeshMaterial3d<StandardMaterial>
 {
-    let key = MatKey { image:      sprite.image.clone(),
-                       alpha_mode: HashableAlphaMode(sprite3d.alpha_mode),
+    let alpha_mode = match sprite.alpha_mode {
+        SpriteAlphaMode::Opaque => AlphaMode::Opaque,
+        SpriteAlphaMode::Mask(cutoff) => AlphaMode::Mask(cutoff),
+        SpriteAlphaMode::Blend => AlphaMode::Blend,
+    };
+    let key = MatKey { image:      sprite.image.id(),
+                       alpha_mode: HashableAlphaMode(alpha_mode),
                        unlit:      sprite3d.unlit,
                        emissive:   reduce_colour(sprite3d.emissive),
-                       flip_x:     sprite.flip_x,
-                       flip_y:     sprite.flip_y, };
-    caches.material_cache.entry(key).or_insert_with(|| {
-        MeshMaterial3d(materials.add(build_material(sprite.image.clone(),
-                                                    sprite3d.alpha_mode,
-                                                    sprite3d.unlit,
-                                                    sprite3d.emissive,
-                                                    sprite.flip_x,
-                                                    sprite.flip_y)))
-    }).clone()
+                       color:      reduce_colour(sprite.color.to_linear()), };
+
+    let (color, emissive) = (expand_colour(key.color), expand_colour(key.emissive));
+
+    MeshMaterial3d(cached(&mut caches.material_cache, key, materials,
+                          || build_material(sprite.image.clone(),
+                                            alpha_mode,
+                                            sprite3d.unlit,
+                                            emissive,
+                                            color)))
 }
 
 fn assert_loadable(asset_server: &AssetServer, id: impl Into<UntypedAssetId>, e: Entity)
@@ -178,22 +289,29 @@ fn sync_sprites(mut commands: Commands,
                 mut query: Query<(Entity,
                                   &Sprite3d,
                                   &Sprite,
+                                  &Anchor,
                                   &mut Mesh3d,
                                   &mut MeshMaterial3d<StandardMaterial>,
+                                  &mut Aabb,
                                   Has<Sprite3dPending>),
-                                 Or<(With<Sprite3dPending>, Changed<Sprite>, Changed<Sprite3d>)>>)
+                                 Or<(With<Sprite3dPending>,
+                                     Changed<Sprite>,
+                                     Changed<Sprite3d>,
+                                     Changed<Anchor>)>>)
 {
-    for (e, sprite3d, sprite, mut mesh, mut mat, pending) in &mut query {
-        match sprite_mesh(sprite3d, sprite, &images, &atlas_layouts, &mut caches, &mut meshes) {
+    for (e, sprite3d, sprite, anchor, mut mesh, mut mat, mut aabb, pending) in &mut query {
+        match sprite_mesh(sprite3d, sprite, anchor.as_vec(),
+                          &images, &atlas_layouts, &mut caches, &mut meshes) {
             None => {
                 assert_loadable(&asset_server, sprite.image.id(), e);
                 if let Some(atlas) = &sprite.texture_atlas {
                     assert_loadable(&asset_server, atlas.layout.id(), e);
                 }
-                commands.entity(e).insert(Sprite3dPending);
+                if !pending { commands.entity(e).insert(Sprite3dPending); }
             }
-            Some(m) => {
+            Some((m, a)) => {
                 mesh.set_if_neq(m);
+                aabb.set_if_neq(a);
                 mat.set_if_neq(sprite_material(sprite3d, sprite, &mut caches, &mut materials));
                 if pending { commands.entity(e).remove::<Sprite3dPending>(); }
             }
@@ -205,9 +323,9 @@ fn sync_sprites(mut commands: Commands,
 
 
 // creates a quad mesh facing +z, textured with the `uv` region of the image.
-// pivot has an expected range of (0,0) to (1,1), (0.5, 0.5) being centered
-// (though you can go out of bounds without issue)
-fn quad(w: f32, h: f32, pivot: Vec2, uv: Rect, double_sided: bool) -> Mesh
+// anchor has an expected range of (-0.5,-0.5) to (0.5,0.5), (0,0) being
+// centered (though you can go out of bounds without issue)
+fn quad(w: f32, h: f32, anchor: Vec2, uv: Rect, double_sided: bool) -> Mesh
 {
     // Set RenderAssetUsages to the default value. Maybe allow customization or
     // choose a better default?
@@ -217,8 +335,8 @@ fn quad(w: f32, h: f32, pivot: Vec2, uv: Rect, double_sided: bool) -> Mesh
         RenderAssetUsages::default(),
     );
 
-    let px = pivot.x * w;
-    let py = pivot.y * h;
+    let px = (anchor.x + 0.5) * w;
+    let py = (anchor.y + 0.5) * h;
     #[rustfmt::skip]
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION,
         vec![[-px, -py, 0.0], [w - px, -py, 0.0], [-px, h - py, 0.0], [w - px, h - py, 0.0],
@@ -235,6 +353,18 @@ fn quad(w: f32, h: f32, pivot: Vec2, uv: Rect, double_sided: bool) -> Mesh
     mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0,
         vec![[uv.min.x, uv.max.y], [uv.max.x, uv.max.y], [uv.min.x, uv.min.y], [uv.max.x, uv.min.y],
              [uv.min.x, uv.max.y], [uv.max.x, uv.max.y], [uv.min.x, uv.min.y], [uv.max.x, uv.min.y]]
+    );
+
+    // the rects are per-quad constants, for custom materials. (`uv` may be
+    // flipped, so it's normalised first)
+    let uv_rect = Rect::from_corners(uv.min, uv.max);
+    #[rustfmt::skip]
+    mesh.insert_attribute(SPRITE3D_ATTRIBUTE_RECT,
+        vec![[-px, -py, w - px, h - py]; 8]
+    );
+    #[rustfmt::skip]
+    mesh.insert_attribute(SPRITE3D_ATTRIBUTE_UV_RECT,
+        vec![[uv_rect.min.x, uv_rect.min.y, uv_rect.max.x, uv_rect.max.y]; 8]
     );
 
     #[rustfmt::skip]
@@ -254,20 +384,18 @@ fn build_material(image: Handle<Image>,
                   alpha_mode: AlphaMode,
                   unlit: bool,
                   emissive: LinearRgba,
-                  flip_x: bool,
-                  flip_y: bool)
+                  color: LinearRgba)
                   -> StandardMaterial
 {
-    let mut mat = StandardMaterial { base_color_texture: Some(image),
-                                     cull_mode: Some(Face::Back),
-                                     alpha_mode,
-                                     unlit,
-                                     perceptual_roughness: 0.5,
-                                     reflectance: 0.15,
-                                     emissive,
-                                     ..Default::default() };
-    mat.flip(flip_x, flip_y);
-    mat
+    StandardMaterial { base_color_texture: Some(image),
+                       cull_mode: Some(Face::Back),
+                       alpha_mode,
+                       unlit,
+                       perceptual_roughness: 0.5,
+                       reflectance: 0.15,
+                       emissive,
+                       base_color: color.into(),
+                       ..Default::default() }
 }
 
 
@@ -278,36 +406,28 @@ struct Sprite3dPending;
 
 /// Represents a 3D sprite. Changes to this component, or to the entity's
 /// `Sprite`, are reflected in the rendered mesh and material each frame.
-#[derive(Component)]
-#[require(Transform, Mesh3d, MeshMaterial3d<StandardMaterial>, Sprite3dPending)]
+///
+/// The sprite's image, texture_atlas, color, flip_x, flip_y, custom_size,
+/// rect and alpha_mode are honoured, as is the entity's [Anchor].
+///
+/// Note: `Sprite::alpha_mode` defaults to `Blend`, which is more expensive and
+/// sorts in the transparent pass. Most sprites are better off with
+/// `SpriteAlphaMode::Mask(0.5)` or `Opaque`.
+#[derive(Component, Reflect, Clone, Debug)]
+#[reflect(Component, Default, Clone, Debug)]
+#[require(Sprite, Mesh3d, MeshMaterial3d<StandardMaterial>, Aabb, NoAutoAabb, Sprite3dPending)]
 pub struct Sprite3d
 {
-    /// The sprite's alpha mode.
-    ///
-    /// - `Mask(0.5)` (default) only allows fully opaque or fully transparent pixels
-    ///   (cutoff at `0.5`).
-    /// - `Blend` allows partially transparent pixels (slightly more expensive).
-    /// - Use any other value to achieve desired blending effect.
-    pub alpha_mode: AlphaMode,
-
     /// Whether the sprite should be rendered as unlit.
     /// `false` (default) allows for lighting.
     pub unlit: bool,
 
     /// An emissive colour, if the sprite should emit light.
-    /// `LinearRgba::Black` (default) does nothing.
+    /// `LinearRgba::BLACK` (default) does nothing.
     pub emissive: LinearRgba,
 
     /// the number of pixels per metre of the sprite, assuming a `Transform::scale` of 1.0.
     pub pixels_per_metre: f32,
-
-    /// The sprite's pivot. eg. the point specified by the sprite's
-    /// transform, around which a rotation will be performed.
-    ///
-    /// - pivot = None will have a center pivot
-    /// - pivot = Some(p) will have an expected range of p \in `(0,0)` to `(1,1)`
-    ///   (though you can go out of bounds without issue)
-    pub pivot: Option<Vec2>,
 
     /// Whether the sprite should be rendered as double-sided.
     /// `true` (default) adds a second set of indices, describing the same tris
@@ -315,13 +435,32 @@ pub struct Sprite3d
     pub double_sided: bool,
 }
 
+/// Vertex attributes on every sprite mesh, for custom materials (which
+/// bind them with `.at_shader_location(..)` in Material::specialize, see
+/// examples/dungeon.rs).
+/// SPRITE3D_ATTRIBUTE_RECT is the quad in local space, (min.x, min.y, max.x, max.y).
+pub const SPRITE3D_ATTRIBUTE_RECT: MeshVertexAttribute = rect_attribute("Sprite3d_Rect");
+/// SPRITE3D_ATTRIBUTE_UV_RECT the region of the image drawn, unaffected by flip_x / flip_y (min.x, min.y, max.x, max.y).
+pub const SPRITE3D_ATTRIBUTE_UV_RECT: MeshVertexAttribute = rect_attribute("Sprite3d_UvRect");
+
+// FNV-1a of the name for material keys
+const fn rect_attribute(name: &'static str) -> MeshVertexAttribute
+{
+    let b = name.as_bytes();
+    let mut h = 0xcbf2_9ce4_8422_2325u64;
+    let mut i = 0;
+    while i < b.len() {
+        h = (h ^ b[i] as u64).wrapping_mul(0x100_0000_01b3);
+        i += 1;
+    }
+    MeshVertexAttribute::new(name, h, VertexFormat::Float32x4)
+}
+
 impl Default for Sprite3d
 {
     fn default() -> Self
     {
         Self { pixels_per_metre:   100.,
-               pivot:              None,
-               alpha_mode:         DEFAULT_ALPHA_MODE,
                unlit:              false,
                double_sided:       true,
                emissive:           LinearRgba::BLACK, }
