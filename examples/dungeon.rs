@@ -30,6 +30,7 @@ fn main()
                     ..default()
                 }), ..default()
             }))
+        // .insert_resource(GlobalAmbientLight { color: Color::srgb(0.6, 0.65, 0.9), brightness: 400., ..default() })
         .add_plugins((Sprite3dPlugin,
                       // hovering a character or prop highlights and outlines it
                       MeshPickingPlugin, MaterialPlugin::<OutlineMaterial>::default()))
