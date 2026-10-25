@@ -26,12 +26,11 @@ impl Plugin for Sprite3dPlugin {
         // etc.) resizes its sprites a frame late.
         // (Note: Changes to Sprite itself (atlas index, etc.) still land the same frame).
         // If bevy_pbr changes its code, this can go back after AssetEventSystems.
-        app.add_systems(PostUpdate, ((resync_modified_assets, sync_sprites)
+        app.add_systems(PostUpdate, (resync_modified_assets, sync_sprites)
                                         .chain()
-                                        .before(AssetEventSystems),
-
-                                     // (after bevy's sprite renderer adds its Mesh2d, before the flush)
-                                     strip_mesh2d.after(AssetEventSystems)).in_set(Sprite3dSystems));
+                                        .before(AssetEventSystems)
+                                        .in_set(Sprite3dSystems));
+        app.add_observer(strip_mesh2d);
     }
 }
 
@@ -43,10 +42,14 @@ pub struct Sprite3dSystems;
 // Bevy's sprite renderer adds a Mesh2d to every Sprite. On a Sprite3d a
 // Camera2d would draw it, and mesh picking treats anything with a Mesh2d as
 // two-sided, so back-facing single-sided quads would still catch pointer rays.
-fn strip_mesh2d(mut commands: Commands, query: Query<Entity, (With<Sprite3d>, With<Mesh2d>)>)
+//
+// (Note: must go in the same command flush that added it)
+fn strip_mesh2d(add: On<Add<(Mesh2d, Sprite3d)>>,
+                query: Query<(), (With<Sprite3d>, With<Mesh2d>)>,
+                mut commands: Commands)
 {
-    for e in &query {
-        commands.entity(e).remove::<Mesh2d>();
+    if query.contains(add.entity) {
+        commands.entity(add.entity).remove::<Mesh2d>();
     }
 }
 
