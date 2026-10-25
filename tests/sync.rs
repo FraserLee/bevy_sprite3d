@@ -286,9 +286,47 @@ fn sprite_fields_drive_material()
     assert_eq!(count(&app), 2);
     assert_eq!(handle(&app, red), handle(&app, red2));
 
-    // ...and its cache entry is swept the frame after, on the Unused event
+    // ...its dead cache entry lingers until a purge (or a lookup of its key)
     let cached = |app: &App| app.world().resource::<Sprite3dCaches>().material_cache.len();
     assert_eq!(cached(&app), 3);
-    app.update();
+    app.world_mut().resource_mut::<Sprite3dCaches>().purge();
     assert_eq!(cached(&app), 2);
+}
+
+#[test]
+fn meshes_stay_cached_until_purge()
+{
+    let mut app = app();
+    let img = app.world_mut().resource_mut::<Assets<Image>>().add(image(8, 8));
+    let layout = grid(&mut app, UVec2::splat(4), 2, 1);
+    let count = |app: &App| app.world().resource::<Assets<Mesh>>().len();
+    let cached = |app: &App| app.world().resource::<Sprite3dCaches>().mesh_cache.len();
+
+    let e = app.world_mut()
+               .spawn((Sprite3d::default(),
+                       Sprite { image: img.clone(), texture_atlas: Some(TextureAtlas { layout, index: 0 }), ..default() }))
+               .id();
+    let frame = |app: &mut App, index| {
+        app.world_mut().get_mut::<Sprite>(e).unwrap().texture_atlas.as_mut().unwrap().index = index;
+    };
+    app.update();
+    let first = mesh(&app, e);
+    assert_eq!((cached(&app), count(&app)), (1, 1));
+
+    // an animation's off-screen frame stays resident...
+    frame(&mut app, 1);
+    app.update();
+    app.update();
+    assert_eq!((cached(&app), count(&app)), (2, 2));
+
+    // ...and is handed back when it comes round again
+    frame(&mut app, 0);
+    app.update();
+    assert_eq!(mesh(&app, e), first);
+    assert_eq!((cached(&app), count(&app)), (2, 2));
+
+    // purge drops everything not held right now
+    app.world_mut().resource_mut::<Sprite3dCaches>().purge();
+    app.update();
+    assert_eq!((cached(&app), count(&app)), (1, 1));
 }

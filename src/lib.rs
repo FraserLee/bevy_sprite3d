@@ -26,7 +26,7 @@ impl Plugin for Sprite3dPlugin {
         // etc.) resizes its sprites a frame late.
         // (Note: Changes to Sprite itself (atlas index, etc.) still land the same frame).
         // If bevy_pbr changes its code, this can go back after AssetEventSystems.
-        app.add_systems(PostUpdate, ((resync_modified_assets, sync_sprites, sweep_caches)
+        app.add_systems(PostUpdate, ((resync_modified_assets, sync_sprites)
                                         .chain()
                                         .before(AssetEventSystems),
 
@@ -104,17 +104,30 @@ fn expand_colour(c: [i32; 4]) -> LinearRgba
 }
 
 
-// Weak handles, so an asset is dropped once no sprite uses it. Dead entries
-// are swept on frames where a mesh / material became unused (see `sweep_caches`).
+// Materials are weak handles, so an image is dropped once no sprite uses it.
+// A dead entry is overwritten the next time its key is looked up.
 //
 // (The maps are SwissTables (single allocation holding a control byte per
-//  bucket and a flat array of (key, pointer) buckets). Capacity only grows,
+//  bucket and a flat array of (key, handle) buckets). Capacity only grows,
 //  so no steady-state allocation churn.)
 #[derive(Resource, Default)]
 pub struct Sprite3dCaches
 {
-    pub mesh_cache:     HashMap<[u32; 12], Weak<StrongHandle>>,
+    pub mesh_cache:     HashMap<[u32; 12], Handle<Mesh>>,
     pub material_cache: HashMap<MatKey, Weak<StrongHandle>>,
+}
+
+impl Sprite3dCaches
+{
+    /// Drops every entry no sprite currently holds. (e.g. at a level transition)
+    pub fn purge(&mut self)
+    {
+        self.mesh_cache.retain(|_, h| {
+            let Handle::Strong(arc) = h else { unreachable!() };
+            Arc::strong_count(arc) > 1 // held by something besides the cache
+        });
+        self.material_cache.retain(|_, w| w.strong_count() > 0);
+    }
 }
 
 #[rustfmt::skip]
@@ -131,37 +144,6 @@ fn cached<K: Eq + Hash, A: Asset>(cache: &mut HashMap<K, Weak<StrongHandle>>,
     let Handle::Strong(strong) = &handle else { unreachable!() };
     cache.insert(key, Arc::downgrade(strong));
     handle
-}
-
-// An entry can only die when a mesh / material's last strong handle drops,
-// which bevy reports as `AssetEvent::Unused` (the frame after the drop), so
-// only sweep then.
-//
-// A linear sweep of every bucket O(peak number of distinct [meshes|materials] ).
-// hashbrown just scans the control bytes, and dead entries are dropped in-place
-// (their tombstones are reclaimed on a later insert (rehash in place, or
-// grow + move everything once)) so this performs fine for real-time in the
-// types of scenes I'm working with.
-//
-// `retain` can't be run over part of the table (hashbrown exposes no bucket
-// ranges), so amortising across frames would need a different container.
-#[rustfmt::skip]
-fn sweep_caches(mut caches: ResMut<Sprite3dCaches>,
-                mut meshes: MessageReader<AssetEvent<Mesh>>,
-                mut materials: MessageReader<AssetEvent<StandardMaterial>>)
-{
-    fn any_unused<A: Asset>(events: &mut MessageReader<AssetEvent<A>>) -> bool
-    {
-        let unused = events.read().any(|ev| matches!(ev, AssetEvent::Unused { .. }));
-        events.clear();
-        unused
-    }
-    if any_unused(&mut meshes) {
-        caches.mesh_cache.retain(|_, handle| handle.strong_count() > 0);
-    }
-    if any_unused(&mut materials) {
-        caches.material_cache.retain(|_, handle| handle.strong_count() > 0);
-    }
 }
 
 // The mesh and bounds for a sprite's current image / atlas frame, shared
@@ -207,8 +189,9 @@ fn sprite_mesh(sprite3d: &Sprite3d,
                size.x as u32, size.y as u32];
 
     // (greatly reduces number of unique meshes for tilemaps, etc.)
-    let mesh = Mesh3d(cached(&mut caches.mesh_cache, key, meshes,
-                             || quad(w, h, anchor, uv, sprite3d.double_sided)));
+    let mesh = Mesh3d(caches.mesh_cache.entry(key)
+                            .or_insert_with(|| meshes.add(quad(w, h, anchor, uv, sprite3d.double_sided)))
+                            .clone());
 
     let aabb = Aabb { center:       Vec3A::new(-anchor.x * w, -anchor.y * h, 0.),
                       half_extents: Vec3A::new(w / 2., h / 2., 0.) };

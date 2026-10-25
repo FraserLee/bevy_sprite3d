@@ -12,7 +12,9 @@ This is a pretty common setup in other engines (unity, godot, etc). Useful for:
   [Delver](https://cdn.cloudflare.steamstatic.com/steam/apps/249630/ss_0187dc55d24155ca3944b4ccc827baf7832715a0.1920x1080.jpg))
 
 Both meshes and materials are internally cached, so this crate can be used for
-things like tilemaps without issue.
+things like tilemaps without issue. Meshes accumulate until
+`Sprite3dCaches::purge` (e.g. at a level transition); a material is dropped
+once no sprite is using it.
 
 # Examples
 
@@ -126,7 +128,7 @@ transparency.
 
 | `bevy_sprite3d` version | `bevy` version |
 |-------------------------|----------------|
-| 10.0 - 11.0             | 0.20           |
+| 10.0 - 11.1             | 0.20           |
 | 9.0                     | 0.19           |
 | 8.0                     | 0.18           |
 | 7.0                     | 0.17           |
